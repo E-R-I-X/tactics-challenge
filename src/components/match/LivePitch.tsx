@@ -245,18 +245,20 @@ export function LivePitch({
               >
                 {t.initial}
               </text>
-              <text
-                y={r + 2.35}
-                textAnchor="middle"
-                fontSize="2.1"
-                fontWeight="600"
-                fontFamily="DM Sans, sans-serif"
-                fill={t.active ? '#c8f542' : '#e8f0e9'}
-                opacity={t.active ? 1 : 0.78}
-                style={{ pointerEvents: 'none' }}
-              >
-                {t.label}
-              </text>
+              {/* Full surname only on the active event player to avoid pile-ups */}
+              {t.active && (
+                <text
+                  y={r + 2.4}
+                  textAnchor="middle"
+                  fontSize="2.2"
+                  fontWeight="700"
+                  fontFamily="DM Sans, sans-serif"
+                  fill="#c8f542"
+                  style={{ pointerEvents: 'none' }}
+                >
+                  {t.label}
+                </text>
+              )}
             </g>
           )
         })}
@@ -275,21 +277,16 @@ export function LivePitch({
         </g>
       </svg>
 
-      <div className="pointer-events-none absolute left-2 top-2 flex flex-col gap-1">
-        <span className="rounded bg-black/55 px-2 py-0.5 text-[10px] uppercase tracking-wider text-[var(--accent)]">
-          {phaseLabel}
-        </span>
-        {currentEvent?.playerName && (
-          <span className="rounded bg-black/55 px-2 py-0.5 text-[10px] text-[var(--chalk)]">
-            {currentEvent.playerName}
-          </span>
-        )}
-      </div>
-
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[10px] uppercase tracking-wide text-[var(--muted)]">
         <span className="flex items-center gap-1.5">
           <span className="inline-block h-2 w-2 rounded-full bg-[#f4f7f2] ring-1 ring-[var(--accent)]" />
           Home
+        </span>
+        <span className="min-w-0 flex-1 text-center text-[var(--chalk)] normal-case tracking-normal">
+          <span className="text-[var(--accent)]">{phaseLabel}</span>
+          {currentEvent?.playerName ? (
+            <span className="text-[var(--muted)]"> · {currentEvent.playerName}</span>
+          ) : null}
         </span>
         <span className="flex items-center gap-1.5">
           <span className="inline-block h-2 w-2 rounded-full bg-[#1a3050] ring-1 ring-[#7eb6e8]" />

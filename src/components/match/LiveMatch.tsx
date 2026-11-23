@@ -20,6 +20,7 @@ export function LiveMatch() {
   const tick = useMatchStore((s) => s.tick)
   const togglePause = useMatchStore((s) => s.togglePause)
   const setPaused = useMatchStore((s) => s.setPaused)
+  const setMinute = useMatchStore((s) => s.setMinute)
 
   useEffect(() => {
     if (!result || paused) return
@@ -106,6 +107,8 @@ export function LiveMatch() {
           <button
             type="button"
             onClick={() => {
+              setMinute(90)
+              setPaused(true)
               if (mode === 'official' && result) {
                 completeOfficialAttempt(result, setup)
               }
