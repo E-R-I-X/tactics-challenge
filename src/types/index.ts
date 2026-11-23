@@ -4,6 +4,14 @@ export type PressIntensity = 'low' | 'medium' | 'high' | 'very-high'
 export type Tempo = 'slow' | 'balanced' | 'high'
 export type RestDefenceStructure = '3-2' | '2-3' | '3-1' | '2-2'
 
+/** Canonical pressing trigger ids stored on TacticalSetup. */
+export type PressingTriggerId =
+  | 'gk-back-pass'
+  | 'poor-first-touch'
+  | 'facing-own-goal'
+  | 'cb-back-pass'
+  | 'wide-areas'
+
 export interface Player {
   id: string
   name: string
@@ -26,13 +34,17 @@ export interface SetPieceRoutine {
   type: 'corner' | 'free-kick' | 'throw-in'
   delivery: 'in-swing' | 'out-swing' | 'short'
   targetZone: string
+  /** Screeners on the keeper / near-post blockers. */
+  blockers: boolean
+  /** Attackers making runs across the face / far post. */
+  screeningRunners: boolean
 }
 
 export interface TacticalSetup {
   formation: Formation
   inPossessionShape: string
   outOfPossessionShape: string
-  pressingTriggers: string[]
+  pressingTriggers: PressingTriggerId[]
   pressIntensity: PressIntensity
   counterPress: boolean
   restDefence: RestDefenceStructure
@@ -96,3 +108,12 @@ export interface ModeLayouts {
   in: PitchLayout
   out: PitchLayout
 }
+
+export type TacticsTabId =
+  | 'presets'
+  | 'formation'
+  | 'pressing'
+  | 'rest'
+  | 'buildup'
+  | 'roles'
+  | 'setpieces'
