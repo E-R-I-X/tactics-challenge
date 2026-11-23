@@ -1,0 +1,49 @@
+@import 'tailwindcss';
+
+:root {
+  --pitch-deep: #0c3b2e;
+  --pitch-mid: #145a40;
+  --pitch-line: #e8f0e9;
+  --chalk: #f4f7f2;
+  --ink: #0a1612;
+  --accent: #c8f542;
+  --warn: #f0a060;
+  --panel: #11251c;
+  --panel-border: #1e3d30;
+  --muted: #8aa396;
+  --font-display: 'Barlow Condensed', sans-serif;
+  --font-body: 'DM Sans', sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  color: var(--chalk);
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -10%, #1a4d38 0%, transparent 55%),
+    linear-gradient(180deg, #071510 0%, var(--ink) 40%, #0a1a14 100%);
+  background-attachment: fixed;
+}
+
+h1,
+h2,
+h3,
+.display {
+  font-family: var(--font-display);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+button {
+  font-family: inherit;
+}

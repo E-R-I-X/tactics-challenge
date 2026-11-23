@@ -1,0 +1,302 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Arc, Circle, Layer, Line, Rect, Stage } from 'react-konva'
+import { FORMATION_SLOTS } from '../../data/formations'
+import { slotRole } from '../../data/pitchLayouts'
+import { useTacticsStore } from '../../store/tacticsStore'
+import type { Formation, PossessionMode } from '../../types'
+import { TacticOverlays } from './overlays/TacticOverlays'
+import { PlayerToken } from './PlayerToken'
+
+interface PitchCanvasProps {
+  formation: Formation
+  possessionMode: PossessionMode
+  className?: string
+}
+
+/** FIFA pitch aspect: length 105 × width 68 → portrait top-down. */
+const ASPECT = 68 / 105
+const LINE = '#e8f0e9'
+const PAD_RATIO = 0.035
+
+export function PitchCanvas({
+  formation,
+  possessionMode,
+  className = '',
+}: PitchCanvasProps) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [size, setSize] = useState({ width: 480, height: 480 * ASPECT })
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+
+  const layouts = useTacticsStore((s) => s.layouts)
+  const setup = useTacticsStore((s) => s.setup)
+  const movePlayer = useTacticsStore((s) => s.movePlayer)
+  const resetLayouts = useTacticsStore((s) => s.resetLayouts)
+
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+
+    const update = () => {
+      const width = Math.max(260, el.clientWidth)
+      setSize({ width, height: width * ASPECT })
+    }
+
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  const pad = size.width * PAD_RATIO
+  const pitchW = size.width - pad * 2
+  const pitchH = size.height - pad * 2
+
+  const toScreen = useCallback(
+    (nx: number, ny: number) => ({
+      x: pad + nx * pitchW,
+      y: pad + (1 - ny) * pitchH,
+    }),
+    [pad, pitchW, pitchH],
+  )
+
+  const toNormalized = useCallback(
+    (sx: number, sy: number) => ({
+      x: (sx - pad) / pitchW,
+      y: 1 - (sy - pad) / pitchH,
+    }),
+    [pad, pitchW, pitchH],
+  )
+
+  const dragBoundFunc = useCallback(
+    (pos: { x: number; y: number }) => ({
+      x: Math.min(pad + pitchW, Math.max(pad, pos.x)),
+      y: Math.min(pad + pitchH, Math.max(pad, pos.y)),
+    }),
+    [pad, pitchW, pitchH],
+  )
+
+  const layout = layouts[possessionMode]
+  const slots = FORMATION_SLOTS[formation]
+
+  const tokens = useMemo(
+    () =>
+      slots.map((slot) => {
+        const pos = layout[slot.id] ?? { x: slot.x, y: slot.y }
+        const screen = toScreen(pos.x, pos.y)
+        return {
+          id: slot.id,
+          label: slotRole(formation, slot.id),
+          ...screen,
+        }
+      }),
+    [slots, layout, formation, toScreen],
+  )
+
+  const handleDragEnd = useCallback(
+    (id: string, sx: number, sy: number) => {
+      const clamped = dragBoundFunc({ x: sx, y: sy })
+      movePlayer(id, toNormalized(clamped.x, clamped.y), possessionMode)
+    },
+    [dragBoundFunc, movePlayer, possessionMode, toNormalized],
+  )
+
+  const markings = useMemo(
+    () => buildMarkings(pad, pitchW, pitchH),
+    [pad, pitchW, pitchH],
+  )
+
+  return (
+    <div className={`flex w-full flex-col gap-2 ${className}`}>
+      <div
+        ref={containerRef}
+        className="relative w-full overflow-hidden rounded-lg border border-[var(--panel-border)]"
+        style={{ aspectRatio: '105 / 68' }}
+      >
+        <Stage
+          width={size.width}
+          height={size.height}
+          className="block max-w-full"
+          onMouseDown={(e) => {
+            if (e.target === e.target.getStage()) setSelectedId(null)
+          }}
+        >
+          <Layer listening={false}>
+            <Rect
+              x={0}
+              y={0}
+              width={size.width}
+              height={size.height}
+              fill="#0a2e24"
+            />
+            {Array.from({ length: 10 }, (_, i) => (
+              <Rect
+                key={`stripe-${i}`}
+                x={pad}
+                y={pad + (pitchH / 10) * i}
+                width={pitchW}
+                height={pitchH / 10}
+                fill={i % 2 === 0 ? '#145a40' : '#126644'}
+              />
+            ))}
+            {markings}
+            <TacticOverlays
+              pad={pad}
+              pitchW={pitchW}
+              pitchH={pitchH}
+              possessionMode={possessionMode}
+              pressIntensity={setup.pressIntensity}
+              restDefence={setup.restDefence}
+              buildUpPattern={setup.buildUpPattern}
+              tempo={setup.tempo}
+            />
+          </Layer>
+
+          <Layer>
+            {tokens.map((token) => (
+              <PlayerToken
+                key={`${token.id}-${possessionMode}`}
+                id={token.id}
+                x={token.x}
+                y={token.y}
+                label={token.label}
+                mode={possessionMode}
+                selected={selectedId === token.id}
+                onSelect={setSelectedId}
+                onDragEnd={handleDragEnd}
+                dragBoundFunc={dragBoundFunc}
+                draggable
+              />
+            ))}
+          </Layer>
+        </Stage>
+
+        <div className="pointer-events-none absolute left-3 top-3 rounded bg-black/45 px-2 py-1 text-[10px] uppercase tracking-wider text-[var(--accent)]">
+          {possessionMode === 'in' ? 'In possession' : 'Out of possession'}
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--muted)]">
+        <p>Drag tokens to reshape · each mode keeps its own layout</p>
+        <button
+          type="button"
+          onClick={() => {
+            resetLayouts()
+            setSelectedId(null)
+          }}
+          className="rounded border border-[var(--panel-border)] px-2.5 py-1 text-[var(--chalk)] hover:border-[var(--accent)]/40"
+        >
+          Reset positions
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function buildMarkings(pad: number, pitchW: number, pitchH: number) {
+  const cx = pad + pitchW / 2
+  const cy = pad + pitchH / 2
+  const stroke = { stroke: LINE, strokeWidth: 1.5, opacity: 0.9 }
+  const boxW = pitchW * 0.58
+  const boxH = pitchH * 0.165
+  const sixW = pitchW * 0.32
+  const sixH = pitchH * 0.055
+  const circleR = pitchW * 0.095
+  const spotR = Math.max(2, pitchW * 0.008)
+  const cornerR = pitchW * 0.025
+
+  return (
+    <>
+      <Rect x={pad} y={pad} width={pitchW} height={pitchH} {...stroke} />
+      <Line points={[pad, cy, pad + pitchW, cy]} {...stroke} />
+      <Circle x={cx} y={cy} radius={circleR} {...stroke} />
+      <Circle x={cx} y={cy} radius={spotR} fill={LINE} opacity={0.9} />
+
+      <Rect x={cx - boxW / 2} y={pad} width={boxW} height={boxH} {...stroke} />
+      <Rect x={cx - sixW / 2} y={pad} width={sixW} height={sixH} {...stroke} />
+      <Circle
+        x={cx}
+        y={pad + pitchH * 0.11}
+        radius={spotR}
+        fill={LINE}
+        opacity={0.9}
+      />
+      <Arc
+        x={cx}
+        y={pad + pitchH * 0.11}
+        innerRadius={circleR}
+        outerRadius={circleR}
+        angle={180}
+        rotation={0}
+        {...stroke}
+      />
+
+      <Rect
+        x={cx - boxW / 2}
+        y={pad + pitchH - boxH}
+        width={boxW}
+        height={boxH}
+        {...stroke}
+      />
+      <Rect
+        x={cx - sixW / 2}
+        y={pad + pitchH - sixH}
+        width={sixW}
+        height={sixH}
+        {...stroke}
+      />
+      <Circle
+        x={cx}
+        y={pad + pitchH - pitchH * 0.11}
+        radius={spotR}
+        fill={LINE}
+        opacity={0.9}
+      />
+      <Arc
+        x={cx}
+        y={pad + pitchH - pitchH * 0.11}
+        innerRadius={circleR}
+        outerRadius={circleR}
+        angle={180}
+        rotation={180}
+        {...stroke}
+      />
+
+      <Arc
+        x={pad}
+        y={pad}
+        innerRadius={cornerR}
+        outerRadius={cornerR}
+        angle={90}
+        rotation={0}
+        {...stroke}
+      />
+      <Arc
+        x={pad + pitchW}
+        y={pad}
+        innerRadius={cornerR}
+        outerRadius={cornerR}
+        angle={90}
+        rotation={90}
+        {...stroke}
+      />
+      <Arc
+        x={pad}
+        y={pad + pitchH}
+        innerRadius={cornerR}
+        outerRadius={cornerR}
+        angle={90}
+        rotation={270}
+        {...stroke}
+      />
+      <Arc
+        x={pad + pitchW}
+        y={pad + pitchH}
+        innerRadius={cornerR}
+        outerRadius={cornerR}
+        angle={90}
+        rotation={180}
+        {...stroke}
+      />
+    </>
+  )
+}
