@@ -12,6 +12,8 @@ const TEMPOS: { value: Tempo; label: string }[] = [
 const PATTERNS = [
   { id: 'short-from-back', label: 'Short from back' },
   { id: 'patient-circulation', label: 'Patient circulation' },
+  { id: 'overload-left', label: 'Overload left' },
+  { id: 'dropping-six', label: 'Dropping six' },
   { id: 'direct-into-channels', label: 'Direct channels' },
 ]
 

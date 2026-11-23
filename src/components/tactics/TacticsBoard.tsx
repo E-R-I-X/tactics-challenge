@@ -33,8 +33,15 @@ export function TacticsBoard() {
   const runSimulation = useMatchStore((s) => s.runSimulation)
   const [activeTab, setActiveTab] = useState<TabId>('formation')
 
+  const mode = useChallengeStore((s) => s.mode)
+
   const startMatch = () => {
-    runSimulation(setup, challenge.homeSquad, challenge.awaySquad)
+    runSimulation(
+      setup,
+      challenge.homeSquad,
+      challenge.awaySquad,
+      challenge.homeBench,
+    )
     setPhase('match')
   }
 
@@ -46,6 +53,9 @@ export function TacticsBoard() {
           <h1 className="text-4xl text-[var(--chalk)] md:text-5xl">
             Tactics Board
           </h1>
+          <p className="mt-1 text-sm text-[var(--muted)]">
+            {mode === 'practice' ? 'Practice · unlimited' : 'Official daily attempt'}
+          </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <button

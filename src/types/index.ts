@@ -42,11 +42,27 @@ export interface TacticalSetup {
   setPieces: SetPieceRoutine[]
 }
 
+export type MatchEventType =
+  | 'kickoff'
+  | 'pass'
+  | 'press'
+  | 'turnover'
+  | 'shot'
+  | 'goal'
+  | 'set-piece'
+  | 'substitution'
+  | 'half-time'
+  | 'full-time'
+
 export interface MatchEvent {
   minute: number
-  type: string
+  type: MatchEventType | string
   description: string
   xG?: number
+  team?: 'home' | 'away'
+  /** Pitch coords: x 0–1 width, y 0–1 home goal → away goal. */
+  ballX?: number
+  ballY?: number
 }
 
 export interface MatchResult {
@@ -56,6 +72,13 @@ export interface MatchResult {
   awayXG: number
   events: MatchEvent[]
 }
+
+export interface Scoreline {
+  home: number
+  away: number
+}
+
+export type ChallengeMode = 'official' | 'practice'
 
 export type AppPhase = 'lobby' | 'tactics' | 'match' | 'result'
 
