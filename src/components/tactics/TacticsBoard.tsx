@@ -103,11 +103,14 @@ export function TacticsBoard() {
           <PitchCanvas
             formation={setup.formation}
             possessionMode={possessionMode}
+            activeTab={activeTab}
           />
           <p className="text-sm text-[var(--muted)]">
-            {possessionMode === 'in'
-              ? 'Bright tokens + rest-defence / build-up overlays'
-              : 'Dark tokens + press-line overlay from intensity'}
+            {activeTab === 'setpieces'
+              ? 'Set Pieces tab · delivery arc, target, blockers & runners'
+              : possessionMode === 'in'
+                ? 'In possession · rest-defence players + build-up side'
+                : 'Out of possession · press line + trigger zones'}
           </p>
         </div>
 

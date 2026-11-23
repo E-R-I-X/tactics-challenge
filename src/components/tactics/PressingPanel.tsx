@@ -1,5 +1,6 @@
+import { PRESSING_TRIGGERS } from '../../data/pressingTriggers'
 import { useTacticsStore } from '../../store/tacticsStore'
-import type { PressIntensity } from '../../types'
+import type { PressIntensity, PressingTriggerId } from '../../types'
 import { Panel } from '../ui/Panel'
 import { SegmentedControl } from '../ui/SegmentedControl'
 
@@ -9,8 +10,6 @@ const INTENSITIES: { value: PressIntensity; label: string }[] = [
   { value: 'high', label: 'High' },
   { value: 'very-high', label: 'Max' },
 ]
-
-const TRIGGERS = ['goal-kick', 'back-pass', 'loose-touch', 'wide-trap']
 
 export function PressingPanel() {
   const setup = useTacticsStore((s) => s.setup)
@@ -45,21 +44,27 @@ export function PressingPanel() {
       <p className="mb-2 text-xs uppercase tracking-wide text-[var(--muted)]">
         Triggers
       </p>
+      <p className="mb-2 text-xs text-[var(--muted)]">
+        Sim only awards a strong press bonus when the live situation matches a
+        selected trigger.
+      </p>
       <div className="flex flex-wrap gap-2">
-        {TRIGGERS.map((trigger) => {
-          const on = setup.pressingTriggers.includes(trigger)
+        {PRESSING_TRIGGERS.map((trigger) => {
+          const on = setup.pressingTriggers.includes(trigger.id)
           return (
             <button
-              key={trigger}
+              key={trigger.id}
               type="button"
-              onClick={() => togglePressingTrigger(trigger)}
+              onClick={() =>
+                togglePressingTrigger(trigger.id as PressingTriggerId)
+              }
               className={`rounded border px-2 py-1 text-xs transition ${
                 on
                   ? 'border-[var(--accent)] bg-[var(--accent)]/15 text-[var(--accent)]'
                   : 'border-[var(--panel-border)] text-[var(--muted)]'
               }`}
             >
-              {trigger}
+              {trigger.label}
             </button>
           )
         })}

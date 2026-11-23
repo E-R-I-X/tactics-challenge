@@ -10,11 +10,37 @@ const TEMPOS: { value: Tempo; label: string }[] = [
 ]
 
 const PATTERNS = [
-  { id: 'short-from-back', label: 'Short from back' },
-  { id: 'patient-circulation', label: 'Patient circulation' },
-  { id: 'overload-left', label: 'Overload left' },
-  { id: 'dropping-six', label: 'Dropping six' },
-  { id: 'direct-into-channels', label: 'Direct channels' },
+  { id: 'short-from-back', label: 'Short from back', hint: 'Steady progression' },
+  {
+    id: 'patient-circulation',
+    label: 'Patient circulation',
+    hint: 'Lower turnover risk',
+  },
+  {
+    id: 'dropping-six',
+    label: 'Dropping midfielder',
+    hint: 'Better through the first press line',
+  },
+  {
+    id: 'overload-left',
+    label: 'Overload left',
+    hint: 'Stronger progression on the left',
+  },
+  {
+    id: 'overload-right',
+    label: 'Overload right',
+    hint: 'Stronger progression on the right',
+  },
+  {
+    id: 'inverted-fullbacks',
+    label: 'Inverted full-backs',
+    hint: 'Central overload / side progression',
+  },
+  {
+    id: 'direct-into-channels',
+    label: 'Direct channels',
+    hint: 'Faster advance, higher dangerous turnovers',
+  },
 ]
 
 export function BuildUpPanel() {
@@ -52,7 +78,8 @@ export function BuildUpPanel() {
                   : 'border-[var(--panel-border)] text-[var(--muted)] hover:text-[var(--chalk)]'
               }`}
             >
-              {pattern.label}
+              <span className="block font-medium">{pattern.label}</span>
+              <span className="block text-xs opacity-80">{pattern.hint}</span>
             </button>
           )
         })}

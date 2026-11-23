@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Arc, Circle, Layer, Line, Rect, Stage } from 'react-konva'
 import { FORMATION_SLOTS } from '../../data/formations'
 import { slotRole } from '../../data/pitchLayouts'
+import { restDefenceSlotIds } from '../../data/restDefence'
 import { useTacticsStore } from '../../store/tacticsStore'
 import type { Formation, PossessionMode } from '../../types'
 import { TacticOverlays } from './overlays/TacticOverlays'
@@ -10,6 +11,8 @@ import { PlayerToken } from './PlayerToken'
 interface PitchCanvasProps {
   formation: Formation
   possessionMode: PossessionMode
+  /** Active tactics tab — drives set-piece preview overlays. */
+  activeTab?: string
   className?: string
 }
 
@@ -21,6 +24,7 @@ const PAD_RATIO = 0.035
 export function PitchCanvas({
   formation,
   possessionMode,
+  activeTab = 'formation',
   className = '',
 }: PitchCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -77,19 +81,59 @@ export function PitchCanvas({
 
   const layout = layouts[possessionMode]
   const slots = FORMATION_SLOTS[formation]
+  const showSetPiecePreview = activeTab === 'setpieces'
+  const restIds = useMemo(
+    () => new Set(restDefenceSlotIds(formation, setup.restDefence)),
+    [formation, setup.restDefence],
+  )
+
+  const cornerRoutine = setup.setPieces[0]
+  const setPieceRoles = useMemo(() => {
+    if (!showSetPiecePreview || !cornerRoutine) {
+      return { blockers: new Set<string>(), runners: new Set<string>() }
+    }
+    const outfield = slots.filter((s) => s.id !== 'gk')
+    const byHeight = [...outfield].sort((a, b) => b.y - a.y)
+    const blockers = new Set<string>()
+    const runners = new Set<string>()
+    if (cornerRoutine.blockers) {
+      byHeight.slice(0, 2).forEach((s) => blockers.add(s.id))
+    }
+    if (cornerRoutine.screeningRunners) {
+      byHeight.slice(2, 4).forEach((s) => runners.add(s.id))
+    }
+    return { blockers, runners }
+  }, [showSetPiecePreview, cornerRoutine, slots])
 
   const tokens = useMemo(
     () =>
       slots.map((slot) => {
         const pos = layout[slot.id] ?? { x: slot.x, y: slot.y }
         const screen = toScreen(pos.x, pos.y)
+        let highlight: 'rest-defence' | 'blocker' | 'runner' | null = null
+        if (showSetPiecePreview) {
+          if (setPieceRoles.blockers.has(slot.id)) highlight = 'blocker'
+          else if (setPieceRoles.runners.has(slot.id)) highlight = 'runner'
+        } else if (possessionMode === 'in' && restIds.has(slot.id)) {
+          highlight = 'rest-defence'
+        }
         return {
           id: slot.id,
           label: slotRole(formation, slot.id),
+          highlight,
           ...screen,
         }
       }),
-    [slots, layout, formation, toScreen],
+    [
+      slots,
+      layout,
+      formation,
+      toScreen,
+      showSetPiecePreview,
+      setPieceRoles,
+      possessionMode,
+      restIds,
+    ],
   )
 
   const handleDragEnd = useCallback(
@@ -104,6 +148,12 @@ export function PitchCanvas({
     () => buildMarkings(pad, pitchW, pitchH),
     [pad, pitchW, pitchH],
   )
+
+  const caption = showSetPiecePreview
+    ? 'Set-piece routine preview · blockers & runners highlighted'
+    : possessionMode === 'in'
+      ? 'Rest-defence players highlighted · build-up side overlay'
+      : 'Press line + armed trigger zones'
 
   return (
     <div className={`flex w-full flex-col gap-2 ${className}`}>
@@ -145,21 +195,25 @@ export function PitchCanvas({
               pitchH={pitchH}
               possessionMode={possessionMode}
               pressIntensity={setup.pressIntensity}
+              pressingTriggers={setup.pressingTriggers}
               restDefence={setup.restDefence}
               buildUpPattern={setup.buildUpPattern}
               tempo={setup.tempo}
+              setPieces={setup.setPieces}
+              showSetPiecePreview={showSetPiecePreview}
             />
           </Layer>
 
           <Layer>
             {tokens.map((token) => (
               <PlayerToken
-                key={`${token.id}-${possessionMode}`}
+                key={`${token.id}-${possessionMode}-${activeTab}`}
                 id={token.id}
                 x={token.x}
                 y={token.y}
                 label={token.label}
                 mode={possessionMode}
+                highlight={token.highlight}
                 selected={selectedId === token.id}
                 onSelect={setSelectedId}
                 onDragEnd={handleDragEnd}
@@ -171,12 +225,16 @@ export function PitchCanvas({
         </Stage>
 
         <div className="pointer-events-none absolute left-3 top-3 rounded bg-black/45 px-2 py-1 text-[10px] uppercase tracking-wider text-[var(--accent)]">
-          {possessionMode === 'in' ? 'In possession' : 'Out of possession'}
+          {showSetPiecePreview
+            ? 'Set pieces'
+            : possessionMode === 'in'
+              ? 'In possession'
+              : 'Out of possession'}
         </div>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--muted)]">
-        <p>Drag tokens to reshape · each mode keeps its own layout</p>
+        <p>{caption}</p>
         <button
           type="button"
           onClick={() => {

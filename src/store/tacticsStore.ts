@@ -7,7 +7,9 @@ import type {
   PitchPosition,
   PossessionMode,
   PressIntensity,
+  PressingTriggerId,
   RestDefenceStructure,
+  SetPieceRoutine,
   TacticalSetup,
   Tempo,
 } from '../types'
@@ -35,7 +37,8 @@ interface TacticsState {
   setTempo: (tempo: Tempo) => void
   setBuildUpPattern: (buildUpPattern: string) => void
   setCounterPress: (counterPress: boolean) => void
-  togglePressingTrigger: (trigger: string) => void
+  togglePressingTrigger: (trigger: PressingTriggerId) => void
+  updateSetPiece: (index: number, patch: Partial<SetPieceRoutine>) => void
   movePlayer: (id: string, position: PitchPosition, mode?: PossessionMode) => void
   resetLayouts: () => void
   applyPreset: (setup: TacticalSetup) => void
@@ -83,6 +86,15 @@ export const useTacticsStore = create<TacticsState>((set) => ({
         },
       }
     }),
+  updateSetPiece: (index, patch) =>
+    set((s) => ({
+      setup: {
+        ...s.setup,
+        setPieces: s.setup.setPieces.map((r, i) =>
+          i === index ? { ...r, ...patch } : r,
+        ),
+      },
+    })),
   movePlayer: (id, position, mode) =>
     set((s) => {
       const active = mode ?? s.possessionMode

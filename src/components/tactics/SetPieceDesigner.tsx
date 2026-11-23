@@ -8,17 +8,12 @@ const DELIVERIES: SetPieceRoutine['delivery'][] = [
   'short',
 ]
 
-const ZONES = ['six-yard', 'near-post', 'far-post', 'edge-of-box']
+const ZONES = ['six-yard', 'near-post', 'far-post', 'penalty-spot', 'edge-of-box']
 
 export function SetPieceDesigner() {
   const setup = useTacticsStore((s) => s.setup)
-  const applyPreset = useTacticsStore((s) => s.applyPreset)
+  const updateSetPiece = useTacticsStore((s) => s.updateSetPiece)
   const setPieces = setup.setPieces
-
-  const updateRoutine = (index: number, patch: Partial<SetPieceRoutine>) => {
-    const next = setPieces.map((r, i) => (i === index ? { ...r, ...patch } : r))
-    applyPreset({ ...setup, setPieces: next })
-  }
 
   return (
     <Panel title="Set Pieces">
@@ -39,7 +34,7 @@ export function SetPieceDesigner() {
                 <select
                   value={routine.delivery}
                   onChange={(e) =>
-                    updateRoutine(i, {
+                    updateSetPiece(i, {
                       delivery: e.target.value as SetPieceRoutine['delivery'],
                     })
                   }
@@ -53,10 +48,12 @@ export function SetPieceDesigner() {
                 </select>
               </label>
               <label className="mt-2 flex flex-col gap-1">
-                <span className="text-xs text-[var(--muted)]">Target</span>
+                <span className="text-xs text-[var(--muted)]">Target zone</span>
                 <select
                   value={routine.targetZone}
-                  onChange={(e) => updateRoutine(i, { targetZone: e.target.value })}
+                  onChange={(e) =>
+                    updateSetPiece(i, { targetZone: e.target.value })
+                  }
                   className="rounded border border-[var(--panel-border)] bg-black/40 px-2 py-1.5 text-[var(--chalk)]"
                 >
                   {ZONES.map((z) => (
@@ -69,12 +66,37 @@ export function SetPieceDesigner() {
                   )}
                 </select>
               </label>
+              <div className="mt-3 flex flex-col gap-2">
+                <label className="flex cursor-pointer items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={routine.blockers}
+                    onChange={(e) =>
+                      updateSetPiece(i, { blockers: e.target.checked })
+                    }
+                    className="accent-[var(--accent)]"
+                  />
+                  Blockers / screen on keeper
+                </label>
+                <label className="flex cursor-pointer items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={routine.screeningRunners}
+                    onChange={(e) =>
+                      updateSetPiece(i, { screeningRunners: e.target.checked })
+                    }
+                    className="accent-[var(--accent)]"
+                  />
+                  Screening runners
+                </label>
+              </div>
             </li>
           ))}
         </ul>
       )}
       <p className="mt-3 text-xs text-[var(--muted)]">
-        In-swing into the six-yard box raises set-piece xG in the sim.
+        In-swing into the six-yard box with blockers lifts set-piece xG ~1.4–1.6×
+        in the sim. Routine preview shows on the pitch.
       </p>
     </Panel>
   )

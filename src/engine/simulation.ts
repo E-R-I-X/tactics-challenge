@@ -1,10 +1,22 @@
-import type { MatchEvent, MatchResult, Player, TacticalSetup } from '../types'
+import type {
+  MatchEvent,
+  MatchResult,
+  Player,
+  PressingTriggerId,
+  TacticalSetup,
+} from '../types'
+import { OPPOSITION_SITUATIONS } from '../data/pressingTriggers'
 import { squadAttackRating, squadDefenceRating } from './attributes'
 import {
-  getBuildUpSuccessModifier,
-  getPressSuccessModifier,
-  getSetPieceXGModifier,
-  getTransitionRiskModifier,
+  BASE_PRESS_SUCCESS,
+  getBuildUpProgressSpeed,
+  getBuildUpSuccessMultiplier,
+  getBuildUpTurnoverRisk,
+  getPressIntensityMultiplier,
+  getPressTriggerMultiplier,
+  getSetPieceXGMultiplier,
+  getSideProgressBonus,
+  getTransitionRiskMultiplier,
   type PressSituation,
 } from './modifiers'
 
@@ -31,8 +43,11 @@ export function simulateMatch(input: SimulationInput): MatchResult {
   const homeDefence = squadDefenceRating(homeSquad) / 100
   const awayDefence = squadDefenceRating(awaySquad) / 100
 
-  const buildUp = getBuildUpSuccessModifier(tactics)
-  const transitionRisk = getTransitionRiskModifier(tactics)
+  const buildUpMul = getBuildUpSuccessMultiplier(tactics)
+  const progressSpeed = getBuildUpProgressSpeed(tactics)
+  const turnoverRisk = getBuildUpTurnoverRisk(tactics)
+  const transitionMul = getTransitionRiskMultiplier(tactics)
+  const pressIntensityMul = getPressIntensityMultiplier(tactics)
 
   const events: MatchEvent[] = []
   let possession: Team = 'home'
@@ -75,16 +90,38 @@ export function simulateMatch(input: SimulationInput): MatchResult {
     const attackRating = attacking === 'home' ? homeAttack : awayAttack
     const defenceRating = defending === 'home' ? homeDefence : awayDefence
 
-    // Home team uses user tactics; away uses a flat mid-block baseline
     const isHomeAttacking = attacking === 'home'
     const situation = pickSituation(ballY, attacking, rng)
+
+    // Opposition-in-possession trigger: only home uses the user's selected triggers
+    let trigger: PressingTriggerId | null = null
+    let triggerMatched = false
+    if (defending === 'home') {
+      trigger = pickOppositionTrigger(ballX, ballY, attacking, situation, rng)
+      triggerMatched = tactics.pressingTriggers.includes(trigger)
+    }
+
+    const pressTriggerMul =
+      defending === 'home'
+        ? getPressTriggerMultiplier(tactics, trigger)
+        : 1
     const pressMod =
       defending === 'home'
-        ? getPressSuccessModifier(tactics, situation)
+        ? BASE_PRESS_SUCCESS * pressIntensityMul * pressTriggerMul -
+          BASE_PRESS_SUCCESS +
+          (situation === 'build-up' ? 0.04 : situation === 'midfield' ? 0.015 : -0.03) +
+          (tactics.counterPress ? 0.04 : 0)
         : 0.04
 
-    // Press attempt by defending side
-    if (rng() < 0.28 + Math.abs(pressMod) * 0.5) {
+    // Press attempt — unmatched triggers → much less likely to press
+    const pressAttemptChance =
+      defending === 'home'
+        ? triggerMatched
+          ? 0.38 + pressIntensityMul * 0.12
+          : 0.12 + pressIntensityMul * 0.04
+        : 0.28
+
+    if (rng() < pressAttemptChance) {
       const pressSuccess =
         0.22 +
         pressMod +
@@ -95,11 +132,18 @@ export function simulateMatch(input: SimulationInput): MatchResult {
       ballX = clamp01(ballX + (rng() - 0.5) * 0.2)
       ballY = nudgeBallToward(ballY, defending, 0.04 + rng() * 0.06)
 
+      const triggerLabel =
+        defending === 'home' && trigger
+          ? triggerMatched
+            ? ` · trigger ${trigger}`
+            : ` · no trigger (${trigger})`
+          : ''
+
       events.push({
         minute,
         type: 'press',
         team: defending,
-        description: `${label(defending)} press (${situation})`,
+        description: `${label(defending)} press (${situation}${triggerLabel})`,
         ballX,
         ballY,
       })
@@ -110,17 +154,20 @@ export function simulateMatch(input: SimulationInput): MatchResult {
           minute,
           type: 'turnover',
           team: defending,
-          description: `${label(defending)} win the ball`,
+          description: triggerMatched
+            ? `${label(defending)} win the ball on ${trigger}`
+            : `${label(defending)} win the ball`,
           ballX,
           ballY,
         })
 
         // Transition chance for the new attacking side
-        const risk =
+        // When away breaks on home's press, apply home transition risk multiplier
+        const breakChance =
           defending === 'away'
-            ? Math.max(0, transitionRisk)
-            : 0.04
-        if (rng() < 0.18 + risk) {
+            ? 0.16 * transitionMul
+            : 0.18
+        if (rng() < clamp01(breakChance)) {
           const shot = attemptShot({
             minute,
             team: defending,
@@ -128,9 +175,10 @@ export function simulateMatch(input: SimulationInput): MatchResult {
             defenceRating: defending === 'home' ? awayDefence : homeDefence,
             ballX,
             ballY,
-            buildUpBoost: defending === 'home' ? buildUp * 0.5 : 0,
+            buildUpBoost: defending === 'home' ? (buildUpMul - 1) * 0.3 : 0,
             transition: true,
-            transitionRisk: defending === 'away' ? transitionRisk : 0,
+            // Away transition shot xG scaled by home rest-defence / press risk
+            transitionXGMul: defending === 'away' ? transitionMul : 1,
             rng,
           })
           events.push(...shot.events)
@@ -150,26 +198,47 @@ export function simulateMatch(input: SimulationInput): MatchResult {
     }
 
     // Build-up / progression while in possession
+    const sideBonus = isHomeAttacking ? getSideProgressBonus(tactics, ballX) : 0
+    const firstLineBonus =
+      isHomeAttacking &&
+      tactics.buildUpPattern === 'dropping-six' &&
+      situation === 'build-up'
+        ? 0.14
+        : 0
+
     const progressChance =
-      0.35 +
-      attackRating * 0.25 -
-      defenceRating * 0.15 +
-      (isHomeAttacking ? buildUp : 0.02)
+      0.32 +
+      attackRating * 0.22 -
+      defenceRating * 0.14 +
+      (isHomeAttacking ? (buildUpMul - 1) * 0.5 + sideBonus + firstLineBonus : 0.02)
 
     events.push({
       minute,
       type: 'pass',
       team: attacking,
-      description: `${label(attacking)} work possession`,
+      description: isHomeAttacking
+        ? `${label(attacking)} build (${tactics.buildUpPattern})`
+        : `${label(attacking)} work possession`,
       ballX,
       ballY,
     })
 
     if (rng() < clamp01(progressChance)) {
-      ballX = clamp01(0.25 + rng() * 0.5)
-      ballY = nudgeBallToward(ballY, attacking, 0.12 + rng() * 0.14)
+      // Prefer overload side when progressing
+      if (isHomeAttacking && tactics.buildUpPattern === 'overload-left') {
+        ballX = clamp01(0.15 + rng() * 0.28)
+      } else if (isHomeAttacking && tactics.buildUpPattern === 'overload-right') {
+        ballX = clamp01(0.57 + rng() * 0.28)
+      } else if (isHomeAttacking && tactics.buildUpPattern === 'inverted-fullbacks') {
+        ballX = clamp01(0.28 + rng() * 0.44)
+      } else {
+        ballX = clamp01(0.25 + rng() * 0.5)
+      }
 
-      // Chance of a shot when advanced
+      const advance =
+        (0.1 + rng() * 0.12) * (isHomeAttacking ? progressSpeed : 1)
+      ballY = nudgeBallToward(ballY, attacking, advance)
+
       const inFinalThird =
         (attacking === 'home' && ballY > 0.68) ||
         (attacking === 'away' && ballY < 0.32)
@@ -182,9 +251,9 @@ export function simulateMatch(input: SimulationInput): MatchResult {
           defenceRating,
           ballX,
           ballY,
-          buildUpBoost: isHomeAttacking ? buildUp : 0,
+          buildUpBoost: isHomeAttacking ? (buildUpMul - 1) * 0.5 : 0,
           transition: false,
-          transitionRisk: 0,
+          transitionXGMul: 1,
           rng,
         })
         events.push(...shot.events)
@@ -203,16 +272,49 @@ export function simulateMatch(input: SimulationInput): MatchResult {
           possession = defending
         }
       }
-    } else if (rng() < 0.35) {
+    } else if (
+      rng() <
+      (isHomeAttacking ? turnoverRisk : 0.35)
+    ) {
       possession = defending
+      const dangerous =
+        isHomeAttacking &&
+        tactics.buildUpPattern === 'direct-into-channels' &&
+        rng() < 0.45
       events.push({
         minute,
         type: 'turnover',
         team: defending,
-        description: `${label(defending)} recover after loose pass`,
+        description: dangerous
+          ? `${label(defending)} snatch a dangerous turnover`
+          : `${label(defending)} recover after loose pass`,
         ballX,
         ballY,
       })
+
+      // Direct turnovers can immediately become transition shots against
+      if (dangerous && rng() < 0.35 * transitionMul) {
+        const shot = attemptShot({
+          minute,
+          team: defending,
+          attackRating: awayAttack,
+          defenceRating: homeDefence,
+          ballX,
+          ballY,
+          buildUpBoost: 0,
+          transition: true,
+          transitionXGMul: transitionMul,
+          rng,
+        })
+        events.push(...shot.events)
+        awayXG += shot.xG
+        if (shot.scored) {
+          awayScore += 1
+          possession = 'home'
+        }
+        ballX = shot.ballX
+        ballY = shot.ballY
+      }
     }
 
     // Occasional set piece for the attacking side
@@ -268,7 +370,7 @@ function attemptShot(args: {
   ballY: number
   buildUpBoost: number
   transition: boolean
-  transitionRisk: number
+  transitionXGMul: number
   rng: () => number
 }): { events: MatchEvent[]; xG: number; scored: boolean; team: Team; ballX: number; ballY: number } {
   const {
@@ -278,7 +380,7 @@ function attemptShot(args: {
     defenceRating,
     buildUpBoost,
     transition,
-    transitionRisk,
+    transitionXGMul,
     rng,
   } = args
 
@@ -296,7 +398,7 @@ function attemptShot(args: {
     defenceRating * 0.08
 
   if (transition) {
-    xG += 0.04 + Math.max(0, transitionRisk) * 0.25
+    xG = (xG + 0.05) * transitionXGMul
   }
 
   xG = clamp(xG, 0.03, 0.55)
@@ -350,16 +452,15 @@ function resolveSetPiece(args: {
   const routine = tactics.setPieces.find((r) => r.type === type) ?? tactics.setPieces[0]
   const delivery = routine?.delivery ?? 'out-swing'
   const zone = routine?.targetZone ?? 'penalty spot'
+  const blockers = routine?.blockers ? ' + blockers' : ''
+  const runners = routine?.screeningRunners ? ' + runners' : ''
 
   const base =
     type === 'corner' ? 0.1 : type === 'free-kick' ? 0.08 : 0.04
-  const spMod = team === 'home' ? getSetPieceXGModifier(tactics, type) : 0.02
+  const spMul = team === 'home' ? getSetPieceXGMultiplier(tactics, type) : 1.05
   let xG =
-    base +
-    spMod +
-    attackRating * 0.06 -
-    defenceRating * 0.04
-  xG = clamp(xG, 0.02, 0.4)
+    (base + attackRating * 0.06 - defenceRating * 0.04) * spMul
+  xG = clamp(xG, 0.02, 0.45)
   xG = round2(xG)
 
   const ballX = clamp01(0.35 + rng() * 0.3)
@@ -370,14 +471,13 @@ function resolveSetPiece(args: {
       minute,
       type: 'set-piece',
       team,
-      description: `${label(team)} ${type} — ${delivery} toward ${zone}`,
+      description: `${label(team)} ${type} — ${delivery} toward ${zone}${blockers}${runners}`,
       xG,
       ballX,
       ballY,
     },
   ]
 
-  // Only corners/FKs become shots/goals often
   if (type === 'throw-in' || rng() > 0.7) {
     return { events, xG: 0, scored: false, team, ballX, ballY }
   }
@@ -415,13 +515,38 @@ function resolveSetPiece(args: {
   }
 }
 
+/** Roll an opposition-on-ball situation weighted by pitch location. */
+function pickOppositionTrigger(
+  ballX: number,
+  ballY: number,
+  attacking: Team,
+  situation: PressSituation,
+  rng: () => number,
+): PressingTriggerId {
+  const advancing = attacking === 'home' ? ballY : 1 - ballY
+  const wide = ballX < 0.22 || ballX > 0.78
+  const weights: { id: PressingTriggerId; w: number }[] = [
+    { id: 'gk-back-pass', w: advancing < 0.28 ? 3.2 : 0.4 },
+    { id: 'cb-back-pass', w: advancing < 0.4 ? 2.4 : 0.6 },
+    { id: 'poor-first-touch', w: situation === 'midfield' ? 2.2 : 1.2 },
+    { id: 'facing-own-goal', w: situation === 'build-up' ? 1.8 : 1.1 },
+    { id: 'wide-areas', w: wide ? 3.5 : 0.7 },
+  ]
+  const total = weights.reduce((s, x) => s + x.w, 0)
+  let roll = rng() * total
+  for (const entry of weights) {
+    roll -= entry.w
+    if (roll <= 0) return entry.id
+  }
+  return OPPOSITION_SITUATIONS[OPPOSITION_SITUATIONS.length - 1]
+}
+
 function pickSituation(
   ballY: number,
   attacking: Team,
   rng: () => number,
 ): PressSituation {
-  const advancing =
-    attacking === 'home' ? ballY : 1 - ballY
+  const advancing = attacking === 'home' ? ballY : 1 - ballY
   if (advancing < 0.35) return 'build-up'
   if (advancing < 0.65) return rng() < 0.7 ? 'midfield' : 'build-up'
   return 'final-third'
@@ -465,7 +590,12 @@ function seedFromInputs(
     tactics.risk,
     tactics.counterPress ? '1' : '0',
     tactics.pressingTriggers.join(','),
-    tactics.setPieces.map((s) => `${s.type}:${s.delivery}:${s.targetZone}`).join('|'),
+    tactics.setPieces
+      .map(
+        (s) =>
+          `${s.type}:${s.delivery}:${s.targetZone}:b${s.blockers ? 1 : 0}:r${s.screeningRunners ? 1 : 0}`,
+      )
+      .join('|'),
     home.map((p) => p.id).join(','),
     away.map((p) => p.id).join(','),
   ].join('::')
