@@ -1,10 +1,15 @@
 import { useMemo } from 'react'
-import type { Formation, MatchEvent, Player } from '../../types'
+import type { Formation, MatchEvent, ModeLayouts, Player } from '../../types'
+import type { PitchTactics } from '../../lib/playerSlots'
 import {
   abbreviateName,
   assignSquadToSlots,
   awayPhasePosition,
+  crowdingScale,
   homePhasePosition,
+  nameInitials,
+  pickLabeledPlayerIds,
+  separateTokens,
   teamPhase,
 } from '../../lib/playerSlots'
 
@@ -20,12 +25,30 @@ interface LivePitchProps {
   ballY: number
   possession: 'home' | 'away'
   currentEvent: MatchEvent | null
+  /** User tactics — reshape phase positions (FB width, press line, etc.). */
+  tactics?: PitchTactics
+  /** Optional In/Out layouts from the tactics board. */
+  layouts?: ModeLayouts
   className?: string
 }
 
+interface PitchToken {
+  id: string
+  label: string
+  initial: string
+  team: 'home' | 'away'
+  x: number
+  y: number
+  active: boolean
+  named: boolean
+  slotId: string
+}
+
+const TWEEN_MS = 420
+
 /**
- * Live match pitch: both XIs as named tokens, shaped by phase,
- * with the event player highlighted when available.
+ * Live match pitch: both XIs as named tokens, shaped by phase + tactics,
+ * with smooth tweens, spacing, and decluttered labels.
  */
 export function LivePitch({
   formation,
@@ -37,6 +60,8 @@ export function LivePitch({
   ballY,
   possession,
   currentEvent,
+  tactics,
+  layouts,
   className = '',
 }: LivePitchProps) {
   const eventType = currentEvent?.type
@@ -45,7 +70,7 @@ export function LivePitch({
   const homePhase = teamPhase('home', possession, eventType)
   const awayPhase = teamPhase('away', possession, eventType)
 
-  const homePlayers = useMemo(() => {
+  const rawHome = useMemo(() => {
     const pool = [...homeSquad, ...homeBench]
     const xi: Player[] =
       onPitchIds && onPitchIds.length > 0
@@ -59,40 +84,97 @@ export function LivePitch({
       xi.length === 11 ? xi : homeSquad.slice(0, 11),
     )
     return rows.map((row) => {
-      const pos = homePhasePosition(formation, row.slotId, homePhase)
+      const override =
+        homePhase === 'transition'
+          ? undefined
+          : layouts?.[homePhase]?.[row.slotId]
+      const pos = homePhasePosition(
+        formation,
+        row.slotId,
+        homePhase,
+        tactics,
+        override,
+      )
       const label = abbreviateName(row.player.name)
       return {
         id: row.player.id,
         label,
-        initial: label.slice(0, 1),
+        initial: nameInitials(row.player.name),
         team: 'home' as const,
         x: pos.x,
         y: pos.y,
         active: highlightId === row.player.id,
+        named: false,
+        slotId: row.slotId,
       }
     })
-  }, [formation, homeSquad, homeBench, onPitchIds, homePhase, highlightId])
+  }, [
+    formation,
+    homeSquad,
+    homeBench,
+    onPitchIds,
+    homePhase,
+    highlightId,
+    tactics,
+    layouts,
+  ])
 
-  const awayPlayers = useMemo(() => {
+  const rawAway = useMemo(() => {
     const rows = assignSquadToSlots(formation, awaySquad)
     return rows.map((row) => {
-      const pos = awayPhasePosition(formation, row.slotId, awayPhase)
+      // Away has no custom board layout — phase + shared tactics only.
+      const pos = awayPhasePosition(formation, row.slotId, awayPhase, tactics)
       const label = abbreviateName(row.player.name)
       return {
         id: row.player.id,
         label,
-        initial: label.slice(0, 1),
+        initial: nameInitials(row.player.name),
         team: 'away' as const,
         x: pos.x,
         y: pos.y,
         active: highlightId === row.player.id,
+        named: false,
+        slotId: row.slotId,
       }
     })
-  }, [formation, awaySquad, awayPhase, highlightId])
+  }, [formation, awaySquad, awayPhase, highlightId, tactics])
 
-  const tokens = [...awayPlayers, ...homePlayers]
-  const bx = toSvgX(ballX)
-  const by = toSvgY(ballY)
+  const tokens: PitchToken[] = useMemo(() => {
+    const merged = separateTokens([...rawAway, ...rawHome], 0.082, 14)
+    // Quantize ball for label picks so names don't flicker every tick
+    const qx = Math.round(ballX * 8) / 8
+    const qy = Math.round(ballY * 8) / 8
+    const labeled = pickLabeledPlayerIds(
+      merged,
+      qx,
+      qy,
+      possession,
+      highlightId,
+      3,
+    )
+    return merged.map((t) => ({
+      ...t,
+      named: labeled.has(t.id),
+    }))
+  }, [rawAway, rawHome, ballX, ballY, possession, highlightId])
+
+  const scale = crowdingScale(tokens, 0.09)
+
+  // Park the ball on the event player so carrier + ball read as one unit.
+  // Fall back to sim ball coords when nobody is highlighted.
+  const displayBall = useMemo(() => {
+    if (!highlightId) return { x: ballX, y: ballY }
+    const carrier = tokens.find((t) => t.id === highlightId)
+    if (!carrier) return { x: ballX, y: ballY }
+    // Offset sideways so the surname plate under the token stays readable
+    return {
+      x: Math.min(0.94, Math.max(0.06, carrier.x + 0.034)),
+      y: Math.min(0.94, Math.max(0.06, carrier.y)),
+    }
+  }, [ballX, ballY, highlightId, tokens])
+
+  const bx = toSvgX(displayBall.x)
+  const by = toSvgY(displayBall.y)
 
   const phaseLabel =
     eventType === 'turnover' || eventType === 'press'
@@ -110,14 +192,14 @@ export function LivePitch({
         aria-label="Live match pitch with players"
         style={{
           background:
-            'linear-gradient(180deg, #0a2e24 0%, #0f3d30 40%, #0c3328 100%)',
+            'linear-gradient(180deg, #071a14 0%, #0a241c 40%, #081f18 100%)',
         }}
       >
         <defs>
           <linearGradient id="live-pitch-grad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#16724c" />
-            <stop offset="50%" stopColor="#126644" />
-            <stop offset="100%" stopColor="#0f5a3c" />
+            <stop offset="0%" stopColor="#148056" />
+            <stop offset="50%" stopColor="#116b48" />
+            <stop offset="100%" stopColor="#0e5a3c" />
           </linearGradient>
           <pattern
             id="live-pitch-noise"
@@ -125,59 +207,82 @@ export function LivePitch({
             height="4"
             patternUnits="userSpaceOnUse"
           >
-            <circle cx="1" cy="1" r="0.4" fill="#0a2e24" opacity="0.25" />
-            <circle cx="3" cy="2.5" r="0.3" fill="#1a8a5c" opacity="0.15" />
+            <circle cx="1" cy="1" r="0.35" fill="#0a2e24" opacity="0.2" />
+            <circle cx="3" cy="2.5" r="0.28" fill="#1a8a5c" opacity="0.12" />
           </pattern>
-          <filter id="token-glow" x="-50%" y="-50%" width="200%" height="200%">
-            <feGaussianBlur stdDeviation="1.2" result="blur" />
+          <filter id="token-shadow" x="-60%" y="-60%" width="220%" height="220%">
+            <feDropShadow
+              dx="0"
+              dy="0.55"
+              stdDeviation="0.55"
+              floodColor="#000"
+              floodOpacity="0.55"
+            />
+          </filter>
+          <filter id="token-glow" x="-80%" y="-80%" width="260%" height="260%">
+            <feGaussianBlur stdDeviation="1.4" result="blur" />
             <feMerge>
               <feMergeNode in="blur" />
               <feMergeNode in="SourceGraphic" />
             </feMerge>
           </filter>
+          <filter id="ball-shadow" x="-80%" y="-80%" width="260%" height="260%">
+            <feDropShadow
+              dx="0.2"
+              dy="0.6"
+              stdDeviation="0.45"
+              floodColor="#000"
+              floodOpacity="0.65"
+            />
+          </filter>
+          <radialGradient id="ball-grad" cx="35%" cy="30%" r="65%">
+            <stop offset="0%" stopColor="#fffef8" />
+            <stop offset="55%" stopColor="#f0ebe0" />
+            <stop offset="100%" stopColor="#c8c0b0" />
+          </radialGradient>
         </defs>
 
         {/* Touchline padding */}
-        <rect x="0" y="0" width="100" height="140" fill="#081f18" />
+        <rect x="0" y="0" width="100" height="140" fill="#061510" />
         <rect x="4" y="4" width="92" height="132" fill="url(#live-pitch-grad)" />
         <rect x="4" y="4" width="92" height="132" fill="url(#live-pitch-noise)" />
 
-        {/* Mowing stripes */}
-        {Array.from({ length: 12 }, (_, i) => (
+        {/* Mowing stripes — subtle, less visual noise */}
+        {Array.from({ length: 10 }, (_, i) => (
           <rect
             key={`stripe-${i}`}
             x="4"
-            y={4 + (132 / 12) * i}
+            y={4 + (132 / 10) * i}
             width="92"
-            height={132 / 12}
-            fill={i % 2 === 0 ? '#145a40' : '#126644'}
-            opacity="0.55"
+            height={132 / 10}
+            fill={i % 2 === 0 ? '#135c40' : '#116b48'}
+            opacity="0.4"
           />
         ))}
 
-        {/* Markings */}
+        {/* Markings — higher contrast, cleaner stroke */}
         <g
           fill="none"
-          stroke="#e8f0e9"
-          strokeWidth="0.55"
-          opacity="0.85"
+          stroke="#f2f7f3"
+          strokeWidth="0.5"
+          opacity="0.92"
           strokeLinejoin="round"
         >
           <rect x="4" y="4" width="92" height="132" />
           <line x1="4" y1="70" x2="96" y2="70" />
           <circle cx="50" cy="70" r="11" />
-          <circle cx="50" cy="70" r="0.9" fill="#e8f0e9" stroke="none" />
+          <circle cx="50" cy="70" r="0.85" fill="#f2f7f3" stroke="none" />
 
           {/* Top (away) box */}
           <rect x="24" y="4" width="52" height="22" />
           <rect x="36" y="4" width="28" height="8" />
-          <circle cx="50" cy="18" r="0.8" fill="#e8f0e9" stroke="none" />
+          <circle cx="50" cy="18" r="0.7" fill="#f2f7f3" stroke="none" />
           <path d="M 39 26 A 11 11 0 0 0 61 26" />
 
           {/* Bottom (home) box */}
           <rect x="24" y="114" width="52" height="22" />
           <rect x="36" y="128" width="28" height="8" />
-          <circle cx="50" cy="122" r="0.8" fill="#e8f0e9" stroke="none" />
+          <circle cx="50" cy="122" r="0.7" fill="#f2f7f3" stroke="none" />
           <path d="M 39 114 A 11 11 0 0 1 61 114" />
 
           {/* Corners */}
@@ -194,8 +299,10 @@ export function LivePitch({
           width="92"
           height="66"
           fill={possession === 'home' ? '#c8f542' : '#5b9fd4'}
-          opacity="0.06"
-          className="transition-all duration-500"
+          opacity="0.05"
+          style={{
+            transition: `y ${TWEEN_MS}ms ease-out, fill ${TWEEN_MS}ms ease-out`,
+          }}
         />
 
         {/* Players — away first so home draws on top near overlaps */}
@@ -203,77 +310,120 @@ export function LivePitch({
           const cx = toSvgX(t.x)
           const cy = toSvgY(t.y)
           const isHome = t.team === 'home'
-          const r = t.active ? 4.2 : 3.35
+          const baseR = t.active ? 3.35 : t.named ? 2.75 : 2.45
+          const r = baseR * scale
+          const plateW = Math.max(10, t.label.length * 2.05)
+          // Flip name plate above when near the bottom touchline
+          const plateBelow = cy < 128
+          const plateY = plateBelow ? r + 0.7 : -(r + 3.7)
           return (
             <g
               key={t.id}
-              transform={`translate(${cx}, ${cy})`}
-              filter={t.active ? 'url(#token-glow)' : undefined}
+              style={{
+                transform: `translate(${cx}px, ${cy}px)`,
+                transition: `transform ${TWEEN_MS}ms cubic-bezier(0.22, 1, 0.36, 1)`,
+                willChange: 'transform',
+              }}
+              filter={
+                t.active
+                  ? 'url(#token-glow)'
+                  : 'url(#token-shadow)'
+              }
             >
               {t.active && (
                 <circle
-                  r={r + 2.2}
+                  r={r + 2.0}
                   fill="none"
                   stroke="#c8f542"
-                  strokeWidth="0.7"
-                  opacity="0.95"
+                  strokeWidth="0.75"
+                  opacity="0.9"
                 >
                   <animate
                     attributeName="opacity"
-                    values="0.95;0.35;0.95"
-                    dur="1.2s"
+                    values="0.9;0.35;0.9"
+                    dur="1.15s"
                     repeatCount="indefinite"
                   />
                 </circle>
               )}
               <circle
                 r={r}
-                fill={isHome ? '#f4f7f2' : '#1a3050'}
+                fill={isHome ? '#f5f8f3' : '#1e3a5c'}
                 stroke={
-                  t.active ? '#c8f542' : isHome ? '#c8f542' : '#7eb6e8'
+                  t.active
+                    ? '#c8f542'
+                    : isHome
+                      ? '#b8d94a'
+                      : '#8ec4f0'
                 }
-                strokeWidth={t.active ? 0.9 : 0.55}
+                strokeWidth={t.active ? 0.95 : 0.65}
+              />
+              {/* Inner highlight for depth */}
+              <circle
+                cx={-r * 0.22}
+                cy={-r * 0.28}
+                r={r * 0.32}
+                fill="#fff"
+                opacity={isHome ? 0.32 : 0.22}
+                style={{ pointerEvents: 'none' }}
               />
               <text
                 y="0.85"
                 textAnchor="middle"
-                fontSize="2.4"
+                fontSize={t.active ? 2.15 : 1.9}
                 fontWeight="700"
                 fontFamily="DM Sans, sans-serif"
-                fill={isHome ? '#0a1612' : '#e8f0e9'}
+                fill={isHome ? '#0a1612' : '#f0f6fb'}
                 style={{ pointerEvents: 'none' }}
               >
-                {t.initial}
+                {t.initial.slice(0, t.named || t.active ? 2 : 1)}
               </text>
-              {/* Full surname only on the active event player to avoid pile-ups */}
-              {t.active && (
-                <text
-                  y={r + 2.4}
-                  textAnchor="middle"
-                  fontSize="2.2"
-                  fontWeight="700"
-                  fontFamily="DM Sans, sans-serif"
-                  fill="#c8f542"
-                  style={{ pointerEvents: 'none' }}
-                >
-                  {t.label}
-                </text>
+              {/* Surname only for ball carrier / nearby / event player */}
+              {(t.active || t.named) && (
+                <g style={{ pointerEvents: 'none' }}>
+                  <rect
+                    x={-plateW / 2}
+                    y={plateY}
+                    width={plateW}
+                    height="3.0"
+                    rx="0.55"
+                    fill="#0a1612"
+                    opacity={t.active ? 0.9 : 0.72}
+                  />
+                  <text
+                    y={plateY + 2.15}
+                    textAnchor="middle"
+                    fontSize="1.9"
+                    fontWeight="700"
+                    fontFamily="DM Sans, sans-serif"
+                    fill={t.active ? '#c8f542' : '#c8d0ca'}
+                  >
+                    {t.label}
+                  </text>
+                </g>
               )}
             </g>
           )
         })}
 
-        {/* Ball */}
-        <g className="transition-all duration-300 ease-out">
-          <circle
-            cx={bx}
-            cy={by}
-            r="2.1"
-            fill="#f4f0e6"
-            stroke="#1a1a1a"
-            strokeWidth="0.35"
+        {/* Ball — follows events with the same tween feel */}
+        <g
+          filter="url(#ball-shadow)"
+          style={{
+            transform: `translate(${bx}px, ${by}px)`,
+            transition: `transform ${TWEEN_MS + 80}ms cubic-bezier(0.22, 1, 0.36, 1)`,
+            willChange: 'transform',
+          }}
+        >
+          <circle r="2.55" fill="url(#ball-grad)" stroke="#111" strokeWidth="0.45" />
+          <circle cx="-0.5" cy="-0.55" r="0.55" fill="#fff" opacity="0.6" />
+          <path
+            d="M -1 0.15 Q 0 -0.35 1 0.1"
+            fill="none"
+            stroke="#2a2a2a"
+            strokeWidth="0.28"
+            opacity="0.5"
           />
-          <circle cx={bx - 0.4} cy={by - 0.4} r="0.45" fill="#fff" opacity="0.5" />
         </g>
       </svg>
 

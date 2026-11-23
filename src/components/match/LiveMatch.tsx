@@ -13,6 +13,7 @@ export function LiveMatch() {
   const setPhase = useChallengeStore((s) => s.setPhase)
   const completeOfficialAttempt = useChallengeStore((s) => s.completeOfficialAttempt)
   const setup = useTacticsStore((s) => s.setup)
+  const layouts = useTacticsStore((s) => s.layouts)
   const result = useMatchStore((s) => s.result)
   const minute = useMatchStore((s) => s.minute)
   const paused = useMatchStore((s) => s.paused)
@@ -136,6 +137,8 @@ export function LiveMatch() {
             ballY={live.ballY}
             possession={live.possession}
             currentEvent={live.currentEvent}
+            tactics={setup}
+            layouts={layouts}
           />
         </section>
 

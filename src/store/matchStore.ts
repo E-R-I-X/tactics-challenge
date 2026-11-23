@@ -73,7 +73,6 @@ export function liveSnapshot(result: MatchResult | null, minute: number) {
   }
   const events = result.events.filter((e) => e.minute <= minute)
   const scores = scoreFromEvents(events)
-  const withBall = [...events].reverse().find((e) => e.ballX !== undefined)
   const currentEvent =
     [...events].reverse().find(
       (e) =>
@@ -85,6 +84,11 @@ export function liveSnapshot(result: MatchResult | null, minute: number) {
       (e) => e.type !== 'half-time' && e.type !== 'full-time',
     ) ??
     null
+  // Prefer the live event's ball so the carrier highlight and ball stay in sync.
+  const withBall =
+    currentEvent?.ballX !== undefined
+      ? currentEvent
+      : [...events].reverse().find((e) => e.ballX !== undefined)
 
   let possession: 'home' | 'away' = 'home'
   for (const e of events) {
