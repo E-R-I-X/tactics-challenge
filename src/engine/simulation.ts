@@ -76,6 +76,12 @@ export function simulateMatch(input: SimulationInput): MatchResult {
   let awayXG = 0
   let ballX = 0.5
   let ballY = 0.15
+  /** Soft cooldown after goals — transitional play only. */
+  let majorCooldownUntil = 0
+  /** Minutes since last soft beat — force filler if quiet too long. */
+  let quietStreak = 0
+  /** Build-up depth this possession (0 = just won it). */
+  let phaseDepth = 1
 
   events.push({
     minute: 0,
@@ -98,11 +104,20 @@ export function simulateMatch(input: SimulationInput): MatchResult {
       possession = 'away'
       ballX = 0.5
       ballY = 0.85
+      phaseDepth = 1
+      quietStreak = 0
       continue
     }
 
-    // ~1 meaningful action every 2–3 minutes on average
-    if (rng() > 0.42) continue
+    const inCooldown = minute < majorCooldownUntil
+    // Soft beats more often; major chances gated by cooldown + build-up depth
+    const softChance = inCooldown ? 0.62 : 0.55
+    const forceSoft = quietStreak >= 3
+    if (!forceSoft && rng() > softChance) {
+      quietStreak += 1
+      continue
+    }
+    quietStreak = 0
 
     const attacking: Team = possession
     const defending: Team = attacking === 'home' ? 'away' : 'home'
@@ -113,6 +128,8 @@ export function simulateMatch(input: SimulationInput): MatchResult {
 
     const isHomeAttacking = attacking === 'home'
     const situation = pickSituation(ballY, attacking, rng)
+    /** Shots/set pieces allowed outside post-goal cooldown. */
+    const allowMajor = !inCooldown
 
     let trigger: PressingTriggerId | null = null
     let triggerMatched = false
@@ -136,9 +153,9 @@ export function simulateMatch(input: SimulationInput): MatchResult {
     const pressAttemptChance =
       defending === 'home'
         ? triggerMatched
-          ? 0.38 + pressIntensityMul * 0.12
-          : 0.12 + pressIntensityMul * 0.04
-        : 0.28
+          ? 0.42 + pressIntensityMul * 0.12
+          : 0.16 + pressIntensityMul * 0.05
+        : 0.32
 
     if (rng() < pressAttemptChance * varianceMul(rng, 0.05, 0.1)) {
       const pressSuccess =
@@ -183,24 +200,49 @@ export function simulateMatch(input: SimulationInput): MatchResult {
 
       if (rng() < clamp01(pressSuccess)) {
         possession = defending
+        phaseDepth = 0
         events.push({
           minute,
           type: 'turnover',
           team: defending,
           description: triggerMatched
             ? `${presser.name} wins it on ${trigger}`
-            : `${presser.name} wins the ball`,
+            : `${presser.name} recovers possession`,
           ballX,
           ballY,
           playerId: presser.id,
           playerName: presser.name,
         })
 
-        const breakChance =
-          defending === 'away'
-            ? 0.16 * transitionMul
-            : 0.18
+        // Occasional counters — always preceded by an outlet pass
+        const breakChance = allowMajor
+          ? defending === 'away'
+            ? 0.11 * transitionMul
+            : 0.12
+          : 0
         if (rng() < clamp01(breakChance * varianceMul(rng))) {
+          // Quick outlet pass before the shot so the feed isn't press→goal
+          const outlet = pickPlayerNearBall(
+            formation,
+            defending === 'home' ? homeSquad : awaySquad,
+            defending,
+            ballX,
+            ballY,
+            'transition',
+            rng,
+          )
+          ballY = nudgeBallToward(ballY, defending, 0.08 + rng() * 0.1)
+          ballX = clamp01(ballX + (rng() - 0.5) * 0.18)
+          events.push({
+            minute,
+            type: 'pass',
+            team: defending,
+            description: `${outlet.name} drives the break forward`,
+            ballX,
+            ballY,
+            playerId: outlet.id,
+            playerName: outlet.name,
+          })
           const shot = attemptShot({
             minute,
             team: defending,
@@ -218,14 +260,25 @@ export function simulateMatch(input: SimulationInput): MatchResult {
           events.push(...shot.events)
           if (shot.team === 'home') {
             homeXG += shot.xG
-            if (shot.scored) homeScore += 1
+            if (shot.scored) {
+              homeScore += 1
+              majorCooldownUntil = minute + 4 + Math.floor(rng() * 3)
+            }
           } else {
             awayXG += shot.xG
-            if (shot.scored) awayScore += 1
+            if (shot.scored) {
+              awayScore += 1
+              majorCooldownUntil = minute + 4 + Math.floor(rng() * 3)
+            }
           }
           ballX = shot.ballX
           ballY = shot.ballY
-          if (shot.scored) possession = shot.team === 'home' ? 'away' : 'home'
+          if (shot.scored) {
+            possession = shot.team === 'home' ? 'away' : 'home'
+            phaseDepth = 1
+          } else {
+            phaseDepth = 1
+          }
         }
         continue
       }
@@ -256,18 +309,27 @@ export function simulateMatch(input: SimulationInput): MatchResult {
       rng,
     )
 
+    const passLabel = passDescription(
+      passer.name,
+      isHomeAttacking,
+      tactics.buildUpPattern,
+      situation,
+      phaseDepth,
+      rng,
+    )
     events.push({
       minute,
       type: 'pass',
       team: attacking,
-      description: isHomeAttacking
-        ? `${passer.name} builds (${tactics.buildUpPattern})`
-        : `${passer.name} works possession`,
+      description: passLabel,
       ballX,
       ballY,
       playerId: passer.id,
       playerName: passer.name,
     })
+    phaseDepth += 1
+    /** After this minute's pass, need at least one prior beat of possession. */
+    const allowBuildUpShot = allowMajor && phaseDepth >= 2
 
     if (rng() < clamp01(progressChance)) {
       if (isHomeAttacking && tactics.buildUpPattern === 'overload-left') {
@@ -288,7 +350,33 @@ export function simulateMatch(input: SimulationInput): MatchResult {
         (attacking === 'home' && ballY > 0.68) ||
         (attacking === 'away' && ballY < 0.32)
 
-      if (inFinalThird && rng() < (0.45 + attackRating * 0.2) * varianceMul(rng, 0.06, 0.1)) {
+      // Need build-up depth before a shot; often insert a final pass first
+      if (
+        allowBuildUpShot &&
+        inFinalThird &&
+        rng() < (0.44 + attackRating * 0.2) * varianceMul(rng, 0.06, 0.1)
+      ) {
+        if (rng() < 0.7) {
+          const supplier = pickPlayerNearBall(
+            formation,
+            attackSquad,
+            attacking,
+            ballX,
+            ballY,
+            'in',
+            rng,
+          )
+          events.push({
+            minute,
+            type: 'pass',
+            team: attacking,
+            description: `${supplier.name} finds the runner in the box`,
+            ballX,
+            ballY,
+            playerId: supplier.id,
+            playerName: supplier.name,
+          })
+        }
         const shot = attemptShot({
           minute,
           team: attacking,
@@ -306,17 +394,25 @@ export function simulateMatch(input: SimulationInput): MatchResult {
         events.push(...shot.events)
         if (shot.team === 'home') {
           homeXG += shot.xG
-          if (shot.scored) homeScore += 1
+          if (shot.scored) {
+            homeScore += 1
+            majorCooldownUntil = minute + 4 + Math.floor(rng() * 3)
+          }
         } else {
           awayXG += shot.xG
-          if (shot.scored) awayScore += 1
+          if (shot.scored) {
+            awayScore += 1
+            majorCooldownUntil = minute + 4 + Math.floor(rng() * 3)
+          }
         }
         ballX = shot.ballX
         ballY = shot.ballY
         if (shot.scored) {
           possession = attacking === 'home' ? 'away' : 'home'
+          phaseDepth = 1
         } else if (rng() < 0.4) {
           possession = defending
+          phaseDepth = 0
         }
       }
     } else if (
@@ -324,6 +420,7 @@ export function simulateMatch(input: SimulationInput): MatchResult {
       (isHomeAttacking ? turnoverRisk : 0.35) * varianceMul(rng)
     ) {
       possession = defending
+      phaseDepth = 0
       const interceptor = pickPlayerNearBall(
         formation,
         defenceSquad,
@@ -350,7 +447,31 @@ export function simulateMatch(input: SimulationInput): MatchResult {
         playerName: interceptor.name,
       })
 
-      if (dangerous && rng() < 0.35 * transitionMul * varianceMul(rng)) {
+      if (
+        allowMajor &&
+        dangerous &&
+        rng() < 0.28 * transitionMul * varianceMul(rng)
+      ) {
+        const outlet = pickPlayerNearBall(
+          formation,
+          awaySquad,
+          'away',
+          ballX,
+          ballY,
+          'transition',
+          rng,
+        )
+        ballY = nudgeBallToward(ballY, 'away', 0.06 + rng() * 0.08)
+        events.push({
+          minute,
+          type: 'pass',
+          team: 'away',
+          description: `${outlet.name} releases the counter`,
+          ballX,
+          ballY,
+          playerId: outlet.id,
+          playerName: outlet.name,
+        })
         const shot = attemptShot({
           minute,
           team: defending,
@@ -370,13 +491,18 @@ export function simulateMatch(input: SimulationInput): MatchResult {
         if (shot.scored) {
           awayScore += 1
           possession = 'home'
+          phaseDepth = 1
+          majorCooldownUntil = minute + 4 + Math.floor(rng() * 3)
         }
         ballX = shot.ballX
         ballY = shot.ballY
       }
     }
 
-    if (rng() < (0.04 + (isHomeAttacking ? 0.02 : 0)) * varianceMul(rng, 0.05, 0.1)) {
+    if (
+      allowMajor &&
+      rng() < (0.035 + (isHomeAttacking ? 0.02 : 0)) * varianceMul(rng, 0.05, 0.1)
+    ) {
       const sp = resolveSetPiece({
         minute,
         team: attacking,
@@ -390,15 +516,26 @@ export function simulateMatch(input: SimulationInput): MatchResult {
       events.push(...sp.events)
       if (sp.team === 'home') {
         homeXG += sp.xG
-        if (sp.scored) homeScore += 1
+        if (sp.scored) {
+          homeScore += 1
+          majorCooldownUntil = minute + 4 + Math.floor(rng() * 3)
+        }
       } else {
         awayXG += sp.xG
-        if (sp.scored) awayScore += 1
+        if (sp.scored) {
+          awayScore += 1
+          majorCooldownUntil = minute + 4 + Math.floor(rng() * 3)
+        }
       }
       ballX = sp.ballX
       ballY = sp.ballY
-      if (sp.scored) possession = attacking === 'home' ? 'away' : 'home'
-      else possession = defending
+      if (sp.scored) {
+        possession = attacking === 'home' ? 'away' : 'home'
+        phaseDepth = 1
+      } else {
+        possession = defending
+        phaseDepth = 0
+      }
     }
   }
 
@@ -656,6 +793,41 @@ function pickSituation(
 
 function nudgeBallToward(ballY: number, team: Team, amount: number): number {
   return clamp01(team === 'home' ? ballY + amount : ballY - amount)
+}
+
+function passDescription(
+  name: string,
+  isHome: boolean,
+  buildUpPattern: string,
+  situation: PressSituation,
+  depth: number,
+  rng: () => number,
+): string {
+  if (!isHome) {
+    const away = [
+      `${name} recycles possession`,
+      `${name} works it sideways`,
+      `${name} probes for space`,
+    ]
+    return away[Math.floor(rng() * away.length)]!
+  }
+  if (situation === 'build-up' || depth <= 1) {
+    return `${name} builds (${buildUpPattern})`
+  }
+  if (situation === 'midfield') {
+    const mid = [
+      `${name} progresses through midfield`,
+      `${name} switches the point of attack`,
+      `${name} keeps the move alive (${buildUpPattern})`,
+    ]
+    return mid[Math.floor(rng() * mid.length)]!
+  }
+  const finalThird = [
+    `${name} combines on the edge`,
+    `${name} slips a ball into the channel`,
+    `${name} shapes a cross-field pass`,
+  ]
+  return finalThird[Math.floor(rng() * finalThird.length)]!
 }
 
 function eventOrder(type: string): number {

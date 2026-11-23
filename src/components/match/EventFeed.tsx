@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import type { MatchEvent } from '../../types'
 
 interface EventFeedProps {
@@ -9,6 +10,8 @@ interface EventFeedProps {
   keyMomentsOnly?: boolean
   /** Drop the scroll cap (post-match timeline should show Full Time). */
   unbounded?: boolean
+  /** Keep the newest row in view (live match). */
+  autoScroll?: boolean
 }
 
 const KEY_TYPES = new Set([
@@ -28,10 +31,18 @@ export function EventFeed({
   compact = false,
   keyMomentsOnly = false,
   unbounded = false,
+  autoScroll = false,
 }: EventFeedProps) {
   const rows = keyMomentsOnly
     ? events.filter((e) => KEY_TYPES.has(String(e.type)))
     : events
+  const listRef = useRef<HTMLOListElement>(null)
+  const endRef = useRef<HTMLLIElement>(null)
+
+  useEffect(() => {
+    if (!autoScroll) return
+    endRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
+  }, [autoScroll, rows.length, highlightMinute])
 
   const heightClass = unbounded
     ? ''
@@ -40,21 +51,27 @@ export function EventFeed({
       : 'max-h-80 overflow-y-auto'
 
   return (
-    <ol className={`pr-1 ${heightClass} ${compact ? 'space-y-1.5' : 'space-y-2'}`}>
+    <ol
+      ref={listRef}
+      className={`pr-1 ${heightClass} ${compact ? 'space-y-1.5' : 'space-y-2'}`}
+    >
       {rows.map((event, i) => {
         const active =
           highlightMinute !== undefined && event.minute <= highlightMinute
         const isCurrent =
           highlightMinute !== undefined &&
+          i === rows.length - 1 &&
           event.minute === highlightMinute &&
           event.type !== 'half-time' &&
           event.type !== 'full-time'
         const isGoal = event.type === 'goal'
         const isShot = event.type === 'shot'
+        const isLast = i === rows.length - 1
 
         return (
           <li
             key={`${event.minute}-${event.type}-${i}`}
+            ref={isLast ? endRef : undefined}
             className={`rounded border px-3 transition ${
               compact ? 'py-1.5 text-xs' : 'py-2 text-sm'
             } ${
