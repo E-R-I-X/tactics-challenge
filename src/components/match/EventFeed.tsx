@@ -7,6 +7,8 @@ interface EventFeedProps {
   compact?: boolean
   /** Post-match: goals, shots, set pieces, HT/FT — skip routine passes. */
   keyMomentsOnly?: boolean
+  /** Drop the scroll cap (post-match timeline should show Full Time). */
+  unbounded?: boolean
 }
 
 const KEY_TYPES = new Set([
@@ -25,15 +27,20 @@ export function EventFeed({
   highlightMinute,
   compact = false,
   keyMomentsOnly = false,
+  unbounded = false,
 }: EventFeedProps) {
   const rows = keyMomentsOnly
     ? events.filter((e) => KEY_TYPES.has(String(e.type)))
     : events
 
+  const heightClass = unbounded
+    ? ''
+    : compact
+      ? 'max-h-[28rem] overflow-y-auto'
+      : 'max-h-80 overflow-y-auto'
+
   return (
-    <ol
-      className={`overflow-y-auto pr-1 ${compact ? 'max-h-[28rem] space-y-1.5' : 'max-h-80 space-y-2'}`}
-    >
+    <ol className={`pr-1 ${heightClass} ${compact ? 'space-y-1.5' : 'space-y-2'}`}>
       {rows.map((event, i) => {
         const active =
           highlightMinute !== undefined && event.minute <= highlightMinute

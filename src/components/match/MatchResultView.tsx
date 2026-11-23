@@ -148,6 +148,7 @@ export function MatchResultView() {
           events={result.events}
           highlightMinute={90}
           keyMomentsOnly
+          unbounded
         />
       </section>
 
