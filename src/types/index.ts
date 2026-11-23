@@ -75,6 +75,9 @@ export interface MatchEvent {
   /** Pitch coords: x 0–1 width, y 0–1 home goal → away goal. */
   ballX?: number
   ballY?: number
+  /** Primary player involved (for live pitch highlight). */
+  playerId?: string
+  playerName?: string
 }
 
 export interface MatchResult {
@@ -83,6 +86,8 @@ export interface MatchResult {
   homeXG: number
   awayXG: number
   events: MatchEvent[]
+  /** Seed used for this run — same seed → identical outcome. */
+  seed: number
 }
 
 export interface Scoreline {

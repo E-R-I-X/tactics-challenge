@@ -1,5 +1,5 @@
 import type { KonvaEventObject } from 'konva/lib/Node'
-import { Circle, Group, Text } from 'react-konva'
+import { Circle, Group, Rect, Text } from 'react-konva'
 import type { PossessionMode } from '../../types'
 
 interface PlayerTokenProps {
@@ -11,6 +11,8 @@ interface PlayerTokenProps {
   selected?: boolean
   /** Rest-defence / set-piece role highlight. */
   highlight?: 'rest-defence' | 'blocker' | 'runner' | null
+  /** Optional surname under the role chip. */
+  nameLabel?: string
   draggable?: boolean
   dragBoundFunc?: (pos: { x: number; y: number }) => { x: number; y: number }
   onDragEnd?: (id: string, x: number, y: number) => void
@@ -23,16 +25,20 @@ const MODE_STYLE = {
     stroke: '#c8f542',
     text: '#0a1612',
     ring: '#c8f542',
-    radius: 15,
-    shadowOpacity: 0.4,
+    radius: 16,
+    shadowOpacity: 0.45,
+    plate: '#0a1612',
+    plateText: '#c8f542',
   },
   out: {
-    fill: '#1a3d30',
-    stroke: '#8aa396',
+    fill: '#14352a',
+    stroke: '#7a9e8c',
     text: '#e8f0e9',
     ring: '#5a8a72',
-    radius: 13,
-    shadowOpacity: 0.55,
+    radius: 14,
+    shadowOpacity: 0.6,
+    plate: '#0a1612',
+    plateText: '#8aa396',
   },
 } as const
 
@@ -53,6 +59,7 @@ export function PlayerToken({
   mode,
   selected = false,
   highlight = null,
+  nameLabel,
   draggable = true,
   dragBoundFunc,
   onDragEnd,
@@ -91,12 +98,18 @@ export function PlayerToken({
       }}
     >
       <Circle
-        radius={radius + 4}
+        radius={radius + 5}
         fillEnabled={false}
         stroke={ring}
-        strokeWidth={highlight ? 3 : mode === 'in' ? 2 : 3}
-        opacity={selected || highlight ? 0.95 : 0.55}
-        dash={highlight === 'rest-defence' ? [4, 3] : mode === 'out' ? [4, 3] : undefined}
+        strokeWidth={highlight ? 3 : mode === 'in' ? 2.5 : 2}
+        opacity={selected || highlight ? 0.95 : mode === 'in' ? 0.65 : 0.4}
+        dash={
+          highlight === 'rest-defence'
+            ? [4, 3]
+            : mode === 'out'
+              ? [5, 3]
+              : undefined
+        }
       />
       <Circle
         radius={radius}
@@ -104,7 +117,7 @@ export function PlayerToken({
         stroke={selected ? '#c8f542' : highlight ? ring : style.stroke}
         strokeWidth={selected || highlight ? 3 : 2}
         shadowColor="#000"
-        shadowBlur={mode === 'in' ? 8 : 5}
+        shadowBlur={mode === 'in' ? 10 : 5}
         shadowOpacity={style.shadowOpacity}
         shadowOffsetY={2}
       />
@@ -124,9 +137,9 @@ export function PlayerToken({
       />
       <Text
         text={label}
-        width={44}
-        offsetX={22}
-        offsetY={6}
+        width={48}
+        offsetX={24}
+        offsetY={7}
         align="center"
         fontSize={mode === 'out' ? 9 : 10}
         fontStyle="bold"
@@ -134,6 +147,30 @@ export function PlayerToken({
         fontFamily="DM Sans"
         listening={false}
       />
+      {nameLabel && (
+        <Group y={radius + 6}>
+          <Rect
+            width={Math.max(28, nameLabel.length * 5.2 + 8)}
+            height={12}
+            offsetX={Math.max(14, nameLabel.length * 2.6 + 4)}
+            cornerRadius={2}
+            fill={style.plate}
+            opacity={0.75}
+          />
+          <Text
+            text={nameLabel}
+            width={Math.max(28, nameLabel.length * 5.2 + 8)}
+            offsetX={Math.max(14, nameLabel.length * 2.6 + 4)}
+            offsetY={-1}
+            align="center"
+            fontSize={8}
+            fontStyle="bold"
+            fill={style.plateText}
+            fontFamily="DM Sans"
+            listening={false}
+          />
+        </Group>
+      )}
     </Group>
   )
 }
