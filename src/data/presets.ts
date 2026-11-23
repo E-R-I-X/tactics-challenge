@@ -15,7 +15,7 @@ export const DEFAULT_TACTICS: TacticalSetup = {
     {
       type: 'corner',
       delivery: 'in-swing',
-      targetZone: 'near-post',
+      targetZone: 'six-yard',
     },
   ],
 }

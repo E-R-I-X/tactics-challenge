@@ -1,3 +1,4 @@
+import { comparisonMessage, compareToRealManager } from '../../lib/compareResult'
 import { useChallengeStore } from '../../store/challengeStore'
 import { useMatchStore } from '../../store/matchStore'
 import { useTacticsStore } from '../../store/tacticsStore'
@@ -6,14 +7,29 @@ import { SquadOverview } from './SquadOverview'
 export function DailyChallengeCard() {
   const challenge = useChallengeStore((s) => s.challenge)
   const acceptChallenge = useChallengeStore((s) => s.acceptChallenge)
+  const startPractice = useChallengeStore((s) => s.startPractice)
+  const officialLocked = useChallengeStore((s) => s.officialLocked)
+  const todaysAttempt = useChallengeStore((s) => s.todaysAttempt)
   const resetTactics = useTacticsStore((s) => s.reset)
   const clearMatch = useMatchStore((s) => s.clear)
 
-  const start = () => {
+  const startOfficial = () => {
+    if (officialLocked) return
     resetTactics()
     clearMatch()
     acceptChallenge()
   }
+
+  const startPracticeMode = () => {
+    resetTactics()
+    clearMatch()
+    startPractice()
+  }
+
+  const attemptOutcome =
+    todaysAttempt && officialLocked
+      ? compareToRealManager(todaysAttempt.result, challenge.realManagerScore)
+      : null
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-8 px-4 py-10">
@@ -48,14 +64,45 @@ export function DailyChallengeCard() {
                 {challenge.realManagerResult}
               </p>
             </div>
-            <button
-              type="button"
-              onClick={start}
-              className="rounded bg-[var(--accent)] px-6 py-3 text-base font-semibold text-[var(--ink)] transition hover:brightness-110"
-            >
-              Accept Challenge
-            </button>
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={startOfficial}
+                disabled={officialLocked}
+                className="rounded bg-[var(--accent)] px-6 py-3 text-base font-semibold text-[var(--ink)] transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                {officialLocked ? 'Challenge completed' : 'Accept Challenge'}
+              </button>
+              <button
+                type="button"
+                onClick={startPracticeMode}
+                className="rounded border border-[var(--panel-border)] px-6 py-3 text-base text-[var(--chalk)] hover:border-[var(--accent)]/40"
+              >
+                Practice mode
+              </button>
+            </div>
           </div>
+
+          {todaysAttempt && officialLocked && (
+            <div className="mt-8 max-w-md rounded-lg border border-[var(--panel-border)] bg-black/30 px-4 py-4">
+              <p className="text-sm uppercase tracking-wide text-[var(--muted)]">
+                Today&apos;s official result
+              </p>
+              <p className="mt-1 text-3xl tabular-nums text-[var(--chalk)]">
+                {todaysAttempt.result.homeScore} –{' '}
+                {todaysAttempt.result.awayScore}
+              </p>
+              <p className="mt-1 text-sm text-[var(--muted)]">
+                xG {todaysAttempt.result.homeXG.toFixed(2)} –{' '}
+                {todaysAttempt.result.awayXG.toFixed(2)}
+              </p>
+              {attemptOutcome && (
+                <p className="mt-2 text-[var(--accent)]">
+                  {comparisonMessage(attemptOutcome)}
+                </p>
+              )}
+            </div>
+          )}
         </div>
       </header>
 

@@ -169,20 +169,58 @@ export interface DailyChallenge {
   venue: string
   kickoff: string
   realManagerResult: string
+  /** Hardcoded real-manager scoreline for post-match comparison. */
+  realManagerScore: { home: number; away: number }
   brief: string
   homeSquad: Player[]
   awaySquad: Player[]
+  homeBench: Player[]
 }
 
+export const SAMPLE_HOME_BENCH: Player[] = [
+  {
+    id: 'b1',
+    name: 'Ederson',
+    position: 'GK',
+    attributes: attrs(50, 52, 68, 70, 42, 18, 74, 76, 80, 22),
+  },
+  {
+    id: 'b2',
+    name: 'N. Ake',
+    position: 'CB',
+    attributes: attrs(74, 72, 78, 76, 68, 40, 78, 80, 82, 82),
+  },
+  {
+    id: 'b3',
+    name: 'M. Kovacic',
+    position: 'CM',
+    attributes: attrs(72, 74, 82, 86, 84, 68, 84, 82, 84, 70),
+  },
+  {
+    id: 'b4',
+    name: 'J. Grealish',
+    position: 'LW',
+    attributes: attrs(78, 80, 80, 84, 88, 72, 82, 78, 84, 42),
+  },
+  {
+    id: 'b5',
+    name: 'J. Alvarez',
+    position: 'ST',
+    attributes: attrs(82, 84, 84, 78, 82, 86, 84, 82, 86, 48),
+  },
+]
+
 export const TODAYS_CHALLENGE: DailyChallenge = {
-  id: '2026-11-22',
+  id: '2026-11-23',
   title: 'Derby Day Reset',
   fixture: 'Manchester City vs Liverpool',
   venue: 'Etihad Stadium',
   kickoff: '16:30',
   realManagerResult: 'Real manager drew 1–1',
+  realManagerScore: { home: 1, away: 1 },
   brief:
     'Same squad, same fixture. Outscore the real result with your own tactical plan.',
   homeSquad: SAMPLE_HOME_SQUAD,
   awaySquad: SAMPLE_AWAY_SQUAD,
+  homeBench: SAMPLE_HOME_BENCH,
 }
