@@ -3,6 +3,7 @@ import { useChallengeStore } from '../../store/challengeStore'
 import { useMatchStore } from '../../store/matchStore'
 import { useTacticsStore } from '../../store/tacticsStore'
 import { PitchCanvas } from '../pitch/PitchCanvas'
+import { ModeBadge } from '../ui/ModeBadge'
 import { SegmentedControl } from '../ui/SegmentedControl'
 import { BuildUpPanel } from './BuildUpPanel'
 import { FormationPanel } from './FormationPanel'
@@ -49,12 +50,17 @@ export function TacticsBoard() {
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
+          <div className="mb-2">
+            <ModeBadge mode={mode} size="sm" />
+          </div>
           <p className="text-sm text-[var(--muted)]">{challenge.fixture}</p>
           <h1 className="text-4xl text-[var(--chalk)] md:text-5xl">
             Tactics Board
           </h1>
           <p className="mt-1 text-sm text-[var(--muted)]">
-            {mode === 'practice' ? 'Practice · unlimited' : 'Official daily attempt'}
+            {mode === 'practice'
+              ? 'Unlimited runs · reset anytime'
+              : 'One official attempt · locked squad'}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">

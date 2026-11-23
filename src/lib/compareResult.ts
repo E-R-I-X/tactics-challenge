@@ -22,6 +22,22 @@ function rank(home: number, away: number): number {
 
 export function comparisonMessage(outcome: ManagerComparison): string {
   if (outcome === 'beat') return 'You beat the real manager'
-  if (outcome === 'worse') return 'Real manager got a better result'
+  if (outcome === 'worse') return 'Real manager did better'
   return 'You matched the real manager'
+}
+
+export function comparisonHeadline(outcome: ManagerComparison): string {
+  if (outcome === 'beat') return 'Beat the real manager'
+  if (outcome === 'worse') return 'Real manager did better'
+  return 'Matched the real manager'
+}
+
+export function comparisonDetail(outcome: ManagerComparison): string {
+  if (outcome === 'beat') {
+    return 'Your tactical plan earned a better result than the real manager on this fixture.'
+  }
+  if (outcome === 'worse') {
+    return 'The real manager’s result still stands above yours — tweak and try again in Practice.'
+  }
+  return 'Same outcome as the real manager. Can you push for more?'
 }

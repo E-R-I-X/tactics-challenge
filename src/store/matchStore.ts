@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { randomSalt } from '../engine/rng'
 import { simulateMatch } from '../engine/simulation'
 import type { MatchEvent, MatchResult, Player, TacticalSetup } from '../types'
 
@@ -66,16 +67,41 @@ export function liveSnapshot(result: MatchResult | null, minute: number) {
       events: [] as MatchEvent[],
       ballX: 0.5,
       ballY: 0.5,
+      currentEvent: null as MatchEvent | null,
+      possession: 'home' as 'home' | 'away',
     }
   }
   const events = result.events.filter((e) => e.minute <= minute)
   const scores = scoreFromEvents(events)
   const withBall = [...events].reverse().find((e) => e.ballX !== undefined)
+  const currentEvent =
+    [...events].reverse().find(
+      (e) =>
+        e.type !== 'half-time' &&
+        e.type !== 'full-time' &&
+        e.minute === minute,
+    ) ??
+    [...events].reverse().find(
+      (e) => e.type !== 'half-time' && e.type !== 'full-time',
+    ) ??
+    null
+
+  let possession: 'home' | 'away' = 'home'
+  for (const e of events) {
+    if (e.team && (e.type === 'pass' || e.type === 'shot' || e.type === 'goal' || e.type === 'set-piece' || e.type === 'kickoff')) {
+      possession = e.team
+    } else if (e.type === 'turnover' && e.team) {
+      possession = e.team
+    }
+  }
+
   return {
     ...scores,
     events,
     ballX: withBall?.ballX ?? 0.5,
     ballY: withBall?.ballY ?? 0.5,
+    currentEvent,
+    possession,
   }
 }
 
@@ -90,7 +116,13 @@ export const useMatchStore = create<MatchState>((set, get) => ({
   liveEvents: [],
   runSimulation: (tactics, homeSquad, awaySquad, homeBench = []) => {
     set({ isSimulating: true })
-    const result = simulateMatch({ tactics, homeSquad, awaySquad })
+    // Fresh salt each run → same tactics yield similar but not identical scores.
+    const result = simulateMatch({
+      tactics,
+      homeSquad,
+      awaySquad,
+      runSalt: randomSalt(),
+    })
     set({
       result,
       isSimulating: false,

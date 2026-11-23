@@ -2,8 +2,9 @@ import { useEffect } from 'react'
 import { useChallengeStore } from '../../store/challengeStore'
 import { liveSnapshot, useMatchStore } from '../../store/matchStore'
 import { useTacticsStore } from '../../store/tacticsStore'
+import { ModeBadge } from '../ui/ModeBadge'
 import { EventFeed } from './EventFeed'
-import { MiniPitch } from './MiniPitch'
+import { LivePitch } from './LivePitch'
 import { SubstitutionPanel } from './SubstitutionPanel'
 
 export function LiveMatch() {
@@ -15,6 +16,7 @@ export function LiveMatch() {
   const result = useMatchStore((s) => s.result)
   const minute = useMatchStore((s) => s.minute)
   const paused = useMatchStore((s) => s.paused)
+  const onPitchIds = useMatchStore((s) => s.onPitchIds)
   const tick = useMatchStore((s) => s.tick)
   const togglePause = useMatchStore((s) => s.togglePause)
   const setPaused = useMatchStore((s) => s.setPaused)
@@ -61,20 +63,31 @@ export function LiveMatch() {
   const live = liveSnapshot(result, minute)
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-5 px-4 py-8">
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-5 px-4 py-8">
       <header className="text-center">
-        <p className="text-sm text-[var(--muted)]">
-          {challenge.fixture}
-          {mode === 'practice' ? ' · Practice' : ' · Official'}
-        </p>
-        <h1 className="display text-5xl text-[var(--chalk)] md:text-6xl">
+        <div className="mb-3 flex justify-center">
+          <ModeBadge mode={mode} />
+        </div>
+        <p className="text-sm text-[var(--muted)]">{challenge.fixture}</p>
+        <h1 className="display mt-1 text-5xl text-[var(--chalk)] md:text-6xl">
           Live Match
         </h1>
-        <p className="mt-2 text-4xl font-semibold tabular-nums text-[var(--accent)]">
-          {live.homeScore} – {live.awayScore}
+        <p className="mt-3 text-5xl font-semibold tabular-nums tracking-tight text-[var(--accent)] md:text-6xl">
+          {live.homeScore}
+          <span className="mx-2 text-3xl text-[var(--muted)]">–</span>
+          {live.awayScore}
         </p>
-        <p className="mt-1 text-sm text-[var(--muted)]">
-          {minute}' · xG {live.homeXG.toFixed(2)} – {live.awayXG.toFixed(2)}
+        <p className="mt-2 text-sm text-[var(--muted)]">
+          <span className="tabular-nums text-[var(--chalk)]">{minute}'</span>
+          {' · '}
+          xG{' '}
+          <span className="tabular-nums text-[var(--chalk)]">
+            {live.homeXG.toFixed(2)}
+          </span>
+          {' – '}
+          <span className="tabular-nums text-[var(--chalk)]">
+            {live.awayXG.toFixed(2)}
+          </span>
         </p>
         <div className="mx-auto mt-4 h-1.5 w-full max-w-md overflow-hidden rounded-full bg-black/40">
           <div
@@ -105,19 +118,31 @@ export function LiveMatch() {
         </div>
       </header>
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_1.1fr_0.85fr]">
-        <section className="min-h-[240px] rounded-lg border border-[var(--panel-border)] bg-[var(--panel)]/90 p-3">
+      <div className="grid gap-4 lg:grid-cols-[1.15fr_1fr_0.85fr]">
+        <section className="min-h-[280px] rounded-lg border border-[var(--panel-border)] bg-[var(--panel)]/90 p-3">
           <h2 className="mb-2 text-sm uppercase tracking-wide text-[var(--accent)]">
             Pitch
           </h2>
-          <div className="aspect-square w-full max-w-sm mx-auto">
-            <MiniPitch ballX={live.ballX} ballY={live.ballY} />
-          </div>
+          <LivePitch
+            formation={setup.formation}
+            homeSquad={challenge.homeSquad}
+            awaySquad={challenge.awaySquad}
+            homeBench={challenge.homeBench}
+            onPitchIds={onPitchIds}
+            ballX={live.ballX}
+            ballY={live.ballY}
+            possession={live.possession}
+            currentEvent={live.currentEvent}
+          />
         </section>
 
         <section className="rounded-lg border border-[var(--panel-border)] bg-[var(--panel)]/90 p-4">
           <h2 className="mb-3 text-xl text-[var(--accent)]">Event Feed</h2>
-          <EventFeed events={result.events} highlightMinute={minute} />
+          <EventFeed
+            events={result.events}
+            highlightMinute={minute}
+            compact
+          />
         </section>
 
         <SubstitutionPanel />

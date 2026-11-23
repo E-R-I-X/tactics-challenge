@@ -3,6 +3,8 @@ import { Arc, Circle, Layer, Line, Rect, Stage } from 'react-konva'
 import { FORMATION_SLOTS } from '../../data/formations'
 import { slotRole } from '../../data/pitchLayouts'
 import { restDefenceSlotIds } from '../../data/restDefence'
+import { abbreviateName, assignSquadToSlots } from '../../lib/playerSlots'
+import { useChallengeStore } from '../../store/challengeStore'
 import { useTacticsStore } from '../../store/tacticsStore'
 import type { Formation, PossessionMode } from '../../types'
 import { TacticOverlays } from './overlays/TacticOverlays'
@@ -35,6 +37,7 @@ export function PitchCanvas({
   const setup = useTacticsStore((s) => s.setup)
   const movePlayer = useTacticsStore((s) => s.movePlayer)
   const resetLayouts = useTacticsStore((s) => s.resetLayouts)
+  const homeSquad = useChallengeStore((s) => s.challenge.homeSquad)
 
   useEffect(() => {
     const el = containerRef.current
@@ -105,6 +108,15 @@ export function PitchCanvas({
     return { blockers, runners }
   }, [showSetPiecePreview, cornerRoutine, slots])
 
+  const nameBySlot = useMemo(() => {
+    const assigned = assignSquadToSlots(formation, homeSquad)
+    const map = new Map<string, string>()
+    for (const row of assigned) {
+      map.set(row.slotId, abbreviateName(row.player.name))
+    }
+    return map
+  }, [formation, homeSquad])
+
   const tokens = useMemo(
     () =>
       slots.map((slot) => {
@@ -120,6 +132,7 @@ export function PitchCanvas({
         return {
           id: slot.id,
           label: slotRole(formation, slot.id),
+          nameLabel: nameBySlot.get(slot.id),
           highlight,
           ...screen,
         }
@@ -133,6 +146,7 @@ export function PitchCanvas({
       setPieceRoles,
       possessionMode,
       restIds,
+      nameBySlot,
     ],
   )
 
@@ -176,18 +190,50 @@ export function PitchCanvas({
               y={0}
               width={size.width}
               height={size.height}
-              fill="#0a2e24"
+              fillLinearGradientStartPoint={{ x: 0, y: 0 }}
+              fillLinearGradientEndPoint={{ x: 0, y: size.height }}
+              fillLinearGradientColorStops={[0, '#081f18', 0.45, '#0a2e24', 1, '#071a14']}
             />
-            {Array.from({ length: 10 }, (_, i) => (
+            {Array.from({ length: 12 }, (_, i) => (
               <Rect
                 key={`stripe-${i}`}
                 x={pad}
-                y={pad + (pitchH / 10) * i}
+                y={pad + (pitchH / 12) * i}
                 width={pitchW}
-                height={pitchH / 10}
-                fill={i % 2 === 0 ? '#145a40' : '#126644'}
+                height={pitchH / 12}
+                fill={i % 2 === 0 ? '#16724c' : '#126644'}
+                opacity={0.92}
               />
             ))}
+            {/* Subtle vertical vignette for depth */}
+            <Rect
+              x={pad}
+              y={pad}
+              width={pitchW}
+              height={pitchH}
+              fillLinearGradientStartPoint={{ x: 0, y: 0 }}
+              fillLinearGradientEndPoint={{ x: pitchW, y: 0 }}
+              fillLinearGradientColorStops={[
+                0,
+                'rgba(0,0,0,0.22)',
+                0.5,
+                'rgba(0,0,0,0)',
+                1,
+                'rgba(0,0,0,0.22)',
+              ]}
+            />
+            {/* Phase wash — stronger In vs Out atmosphere */}
+            <Rect
+              x={pad}
+              y={pad}
+              width={pitchW}
+              height={pitchH}
+              fill={
+                possessionMode === 'in'
+                  ? 'rgba(200, 245, 66, 0.07)'
+                  : 'rgba(240, 160, 96, 0.08)'
+              }
+            />
             {markings}
             <TacticOverlays
               pad={pad}
@@ -212,6 +258,7 @@ export function PitchCanvas({
                 x={token.x}
                 y={token.y}
                 label={token.label}
+                nameLabel={token.nameLabel}
                 mode={possessionMode}
                 highlight={token.highlight}
                 selected={selectedId === token.id}
@@ -224,7 +271,15 @@ export function PitchCanvas({
           </Layer>
         </Stage>
 
-        <div className="pointer-events-none absolute left-3 top-3 rounded bg-black/45 px-2 py-1 text-[10px] uppercase tracking-wider text-[var(--accent)]">
+        <div
+          className={`pointer-events-none absolute left-3 top-3 rounded px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider ${
+            showSetPiecePreview
+              ? 'bg-black/55 text-[var(--accent)]'
+              : possessionMode === 'in'
+                ? 'bg-[var(--accent)] text-[var(--ink)]'
+                : 'bg-[var(--warn)]/90 text-[var(--ink)]'
+          }`}
+        >
           {showSetPiecePreview
             ? 'Set pieces'
             : possessionMode === 'in'
